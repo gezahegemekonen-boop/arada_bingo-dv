@@ -246,11 +246,17 @@ async def process_room_selection(callback_query: CallbackQuery):
                         game_id = data['game_id']
 
                         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-                            InlineKeyboardButton(
-                                text="Select Your Cartela",
-                                web_app=WebAppInfo(url=f"{WEBAPP_URL}/game/{game_id}/select_cartela")
-                            )
-                        ]])
+    InlineKeyboardButton(
+        text="Select Your Cartela",
+        web_app=WebAppInfo(url=f"https://arada-bingo.com/game/{game_id}/select_cartela")
+    )
+]])
+
+await callback_query.message.edit_text(
+    f"Game created! Entry price: {price} birr\nPlease select your cartela:",
+    reply_markup=keyboard
+)
+
 
                         await callback_query.message.edit_text(
                             f"Game created! Entry price: {price} birr\nPlease select your cartela:",
