@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cartela Bingo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/cartela.css') }}">
+</head>
+<body>
+  <header>
+    <h1>🎯 Cartela Bingo</h1>
+    <div id="game-info">
+      <p>Game ID: <span id="game-id">{{ game_id }}</span></p>
+      <p>Stake: <span id="stake">10 ETB</span></p>
+      <p>Players: <span id="players">14</span></p>
+      <p>Derash: <span id="derash">112 ETB</span></p>
+    </div>
+  </header>
+
+  <section id="bonus-grid">
+    <h2>Bonus Numbers</h2>
+    <div class="grid" id="bonus-numbers"></div>
+  </section>
+
+  <section id="cartela-section">
+    <h2>Your Cartela</h2>
+    <div class="cartela-grid" id="cartela"></div>
+  </section>
+
+  <section id="controls">
+    <button id="refresh">🔄 Refresh</button>
+    <button id="add-cartela">➕ Add Cartela</button>
+    <button id="bingo">🎉 BINGO</button>
+  </section>
+
+  <footer>
+    <p>© Arada Bingo Ethiopia 2025</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/cartela.js') }}"></script>
+</body>
+</html>
