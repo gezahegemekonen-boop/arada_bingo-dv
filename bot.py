@@ -1,3 +1,5 @@
+# bot.py
+
 import os
 import logging
 import asyncio
@@ -49,6 +51,7 @@ class UserState(StatesGroup):
     waiting_for_withdrawal = State()
     waiting_for_language = State()
 
+# 🟢 Start & Registration
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     user_id = message.from_user.id
@@ -128,6 +131,7 @@ async def show_main_menu(message: Message):
             reply_markup=keyboard
         )
 
+# 💰 Deposit Flow
 @router.message(F.text == "💰 Deposit")
 async def process_deposit_command(message: Message, state: FSMContext):
     await state.set_state(UserState.waiting_for_deposit_amount)
@@ -162,6 +166,7 @@ async def process_deposit_amount(message: Message, state: FSMContext):
     finally:
         await state.clear()
 
+# 💳 Withdrawal Flow
 @router.message(F.text == "💳 Withdraw")
 async def process_withdraw_command(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -204,13 +209,14 @@ async def process_withdrawal_request(message: Message, state: FSMContext):
     finally:
         await state.clear()
 
+# 🎮 Game Room Selection
 @router.message(F.text == "🎮 Play Bingo")
 async def process_play_command(message: Message):
     user_id = message.from_user.id
     with app.app_context():
-        user = User.query.filter_by(telegram_id=user_id).first()
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"{price} Birr Room", callback_data=f"room_{price}")] for price in GAME_PRICES
+        user = User.query.filter_by(telegram_id
+
+                                                [InlineKeyboardButton(text=f"{price} Birr Room", callback_data=f"room_{price}")] for price in GAME_PRICES
         ])
         await message.answer("Choose your Bingo room:", reply_markup=keyboard)
 
@@ -226,7 +232,6 @@ async def process_room_selection(callback_query: CallbackQuery):
                 await callback_query.answer("Insufficient balance. Please deposit first.", show_alert=True)
                 return
 
-            # Deduct balance and apply admin commission
             total_price = price
             commission = total_price * 0.2
             net_entry = total_price - commission
@@ -235,7 +240,6 @@ async def process_room_selection(callback_query: CallbackQuery):
             user.games_played += 1
             db.session.commit()
 
-            # Create game via API
             async with aiohttp.ClientSession() as session:
                 async with session.post(f"{WEBAPP_URL}/game/create", json={
                     'entry_price': net_entry,
@@ -244,20 +248,12 @@ async def process_room_selection(callback_query: CallbackQuery):
                     if response.status == 200:
                         data = await response.json()
                         game_id = data['game_id']
-
                         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-    InlineKeyboardButton(
-        text="Select Your Cartela",
-        web_app=WebAppInfo(url=f"https://arada-bingo.com/game/{game_id}/select_cartela")
-    )
-]])
-
-await callback_query.message.edit_text(
-    f"Game created! Entry price: {price} birr\nPlease select your cartela:",
-    reply_markup=keyboard
-)
-
-
+                            InlineKeyboardButton(
+                                text="Select Your Cartela",
+                                web_app=WebAppInfo(url=f"{WEBAPP_URL}/game/{game_id}/select_cartela")
+                            )
+                        ]])
                         await callback_query.message.edit_text(
                             f"Game created! Entry price: {price} birr\nPlease select your cartela:",
                             reply_markup=keyboard
@@ -268,10 +264,12 @@ await callback_query.message.edit_text(
         logger.error(f"Error creating game: {e}")
         await callback_query.answer("Sorry, there was an error. Please try again.", show_alert=True)
 
+# 🧪 Demo Mode
 @router.message(F.text == "🧪 Demo Mode")
 async def demo_mode(message: Message):
     await message.answer("🎮 Demo Mode activated!\nYou can play without spending real money.\nEnjoy testing the game!")
 
+# 📊 Stats
 @router.message(F.text == "📊 My Stats")
 async def process_stats_command(message: Message):
     try:
@@ -293,6 +291,7 @@ async def process_stats_command(message: Message):
         logger.error(f"Stats error: {e}")
         await message.answer("Something went wrong. Try again later.")
 
+# 📈 Leaderboard
 @router.message(F.text == "📈 Leaderboard")
 async def leaderboard(message: Message):
     with app.app_context():
@@ -302,6 +301,7 @@ async def leaderboard(message: Message):
             board += f"{i}. @{user.username or 'Anonymous'} - {user.games_won} wins\n"
         await message.answer(board)
 
+# 🌐 Language Toggle
 @router.message(F.text == "🌐 Language")
 async def language_toggle(message: Message, state: FSMContext):
     await state.set_state(UserState.waiting_for_language)
@@ -323,6 +323,7 @@ async def set_language(message: Message, state: FSMContext):
             return
     await message.answer("Invalid choice. Please try again.")
 
+# 🧾 Transactions
 @router.message(F.text == "🧾 Transactions")
 async def transaction_history(message: Message):
     with app.app_context():
@@ -333,6 +334,7 @@ async def transaction_history(message: Message):
             history += f"{tx.created_at.strftime('%Y-%m-%d')} - {tx.type} - {tx.amount} birr ({tx.status})\n"
         await message.answer(history)
 
+# 🔐 Admin Commands
 @router.message(Command("approve"))
 async def approve_withdrawals(message: Message):
     with app.app_context():
