@@ -299,7 +299,7 @@ def mark_number(game_id):
     winner, message = game.check_winner(user_id)
     if winner:
         game.end_game(user_id)
-
+        
     return jsonify({
         'marked': game.players[user_id]['marked'],
         'winner': winner,
@@ -307,4 +307,36 @@ def mark_number(game_id):
     })
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=Tru
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        if username == os.getenv("ADMIN_USERNAME") and password == os.getenv("ADMIN_PASSWORD"):
+            session["admin"] = True
+            return redirect(url_for("admin_dashboard"))
+        else:
+            return render_template("admin_login.html", error="❌ Invalid credentials")
+
+    return render_template("admin_login.html")
+
+@app.route("/admin/dashboard")
+def admin_dashboard():
+    if not session.get("admin"):
+        return redirect(url_for("admin_login"))
+    return render_template("admin_dashboard.html")
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin", None)
+    return redirect(url_for("admin_login"))
+
+
+
+
+
+
+            
