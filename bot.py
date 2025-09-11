@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 # --- Flask and Bot Setup ---
 app = Flask(__name__)
+app.secret_key = os.getenv("SESSION_SECRET")  # 🔐 This secures your sessions
 init_db(app)
 
 router = Router()
