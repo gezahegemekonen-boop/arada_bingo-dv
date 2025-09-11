@@ -250,3 +250,44 @@ async def process_stats_command(message: Message):
         with app.app_context():
             user = User.query.filter_by(telegram_id=message.from_user.id).first()
             if not user:
+                await message.answer("Please register first using /start")
+                return
+
+            transactions = Transaction.query.filter_by(user_id=user.id).order_by(Transaction.created_at.desc()).limit(5).all()
+            stats = (
+                f"📊 Your Stats — Arada Bingo Ethiopia\n\n"
+                f"💰 Balance: {user.balance:.2f} birr\n"
+                f"🎮 Games Played: {user.games_played}\n"
+                f"🏆 Games Won: {user.games_won}\n\n"
+                f"Recent Transactions:\n"
+            )
+            for tx in transactions:
+                stats += f"{'➕' if tx.amount > 0 else '➖'} {abs(tx.amount)} birr - {tx.type} ({tx.status})\n"
+
+            await message.answer(stats)
+    except Exception as e:
+        logger.error(f"Stats error: {e}")
+        await message.answer("Something went wrong. Try again later.")
+
+@router.message(Command("toggle_auto"))
+async def toggle_auto_play(message: Message):
+    user_id = message.from_user.id
+    AUTO_PLAY[user_id] = not AUTO_PLAY.get(user_id, False)
+    status = "enabled" if AUTO_PLAY[user_id] else "disabled"
+    await message.answer(f"🔁 Auto-play is now {status}.")
+
+# --- Bot Startup ---
+async def main():
+    try:
+        dp.include_router(router)
+        logger.info("Bot is starting...")
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    except Exception as e:
+        logger.error(f"Startup error: {e}")
+        raise
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped.")
