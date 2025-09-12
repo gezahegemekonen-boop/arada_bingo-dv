@@ -4,7 +4,7 @@ import os
 import logging
 import asyncio
 from datetime import datetime
-from flask import Flask
+from flask import Flask, request, jsonify
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -31,6 +31,17 @@ GAME_PRICES = [10, 20, 30, 50, 100]
 LANGUAGES = {"en": "English", "am": "አማርኛ"}
 AUTO_PLAY = {}
 USER_LANG = {}
+
+# 🎮 Player Command Layout (Portable)
+PLAYER_COMMANDS = [
+    ("🎮 Play Bingo", "🧪 Demo Mode"),
+    ("💰 Deposit", "💳 Withdraw"),
+    ("📊 My Stats", "📈 Leaderboard"),
+    ("🌐 Language", "🧾 Transactions"),
+    ("📋 Instructions", "📨 Invite Friends"),
+    ("💱 Convert Coins", "💼 Game History"),
+    ("💸 Check Balance")
+]
 
 # 🧪 Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -114,15 +125,7 @@ async def show_main_menu(message: Message):
             return
 
         keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="🎮 Play Bingo"), KeyboardButton(text="🧪 Demo Mode")],
-                [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
-                [KeyboardButton(text="📊 My Stats"), KeyboardButton(text="📈 Leaderboard")],
-                [KeyboardButton(text="🌐 Language"), KeyboardButton(text="🧾 Transactions")],
-                [KeyboardButton(text="📋 Instructions"), KeyboardButton(text="📨 Invite Friends")],
-                [KeyboardButton(text="💱 Convert Coins"), KeyboardButton(text="💼 Game History")],
-                [KeyboardButton(text="💸 Check Balance")]
-            ],
+            keyboard=[[KeyboardButton(text=label) for label in row] for row in PLAYER_COMMANDS],
             resize_keyboard=True
         )
 
@@ -218,8 +221,7 @@ async def process_play_command(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"{price} Birr Room", callback_data=f"room_{price}")] for price in GAME_PRICES
     ])
-
-        await message.answer("Choose your Bingo room:", reply_markup=keyboard)
+    await message.answer("Choose your Bingo room:", reply_markup=keyboard)
 
 @router.callback_query(lambda c: c.data.startswith('room_'))
 async def process_room_selection(callback_query: CallbackQuery):
@@ -246,6 +248,9 @@ async def process_room_selection(callback_query: CallbackQuery):
                     'entry_price': net_entry,
                     'user_id': user.id
                 }) as response:
+                    logger.info(f"Game creation response status: {response.status}")
+                    logger.info(f"Game creation response body: {await response.text()}")
+
                     if response.status == 200:
                         data = await response.json()
                         game_id = data['game_id']
@@ -302,7 +307,7 @@ async def leaderboard(message: Message):
             board += f"{i}. @{user.username or 'Anonymous'} - {user.games_won} wins\n"
         await message.answer(board)
 
-# 🌐 Language
+# 🌐 Language Toggle
 @router.message(F.text == "🌐 Language")
 async def language_toggle(message: Message, state: FSMContext):
     await state.set_state(UserState.waiting_for_language)
@@ -335,22 +340,7 @@ async def transaction_history(message: Message):
             history += f"{tx.created_at.strftime('%Y-%m-%d')} - {tx.type} - {tx.amount} birr ({tx.status})\n"
         await message.answer(history)
 
-# ✅ New Commands You Requested
-
-@router.message(F.text == "💸 Check Balance")
-async def check_balance(message: Message):
-    with app.app_context():
-        user = User.query.filter_by(telegram_id=message.from_user.id).first()
-        await message.answer(f"💰 Your current balance is: {user.balance:.2f} birr")
-
-@router.message(F.text == "💱 Convert Coins")
-async def convert_coins(message: Message):
-    await message.answer("🔄 Coin conversion feature is coming soon!")
-
-@router.message(F.text == "💼 Game History")
-async def game_history(message: Message):
-    await message.answer("📋 Game history feature is under development. Stay tuned!")
-
+# 📋 Instructions
 @router.message(F.text == "📋 Instructions")
 async def game_instructions(message: Message):
     await message.answer(
@@ -362,14 +352,31 @@ async def game_instructions(message: Message):
         "🎯 Demo Mode is available for free testing."
     )
 
+# 📨 Invite Friends
 @router.message(F.text == "📨 Invite Friends")
 async def invite_friends(message: Message):
     bot_info = await bot.get_me()
     referral_link = f"https://t.me/{bot_info.username}?start={message.from_user.id}"
     await message.answer(f"📨 Share this link to invite friends:\n{referral_link}")
 
-# 🔁 Command Aliases for Player Features
+# 💱 Convert Coins
+@router.message(F.text == "💱 Convert Coins")
+async def convert_coins(message: Message):
+    await message.answer("🔄 Coin conversion feature is coming soon!")
 
+# 💼 Game History
+@router.message(F.text == "💼 Game History")
+async def game_history(message: Message):
+    await message.answer("📋 Game history feature is under development. Stay tuned!")
+
+# 💸 Check Balance
+@router.message(F.text == "💸 Check Balance")
+async def check_balance(message: Message):
+    with app.app_context():
+        user = User.query.filter_by(telegram_id=message.from_user.id).first()
+        await message.answer(f"💰 Your current balance is: {user.balance:.2f} birr")
+
+# 🔁 Command Aliases
 @router.message(Command("play"))
 async def cmd_play(message: Message):
     await process_play_command(message)
