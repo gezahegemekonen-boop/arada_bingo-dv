@@ -118,7 +118,10 @@ async def show_main_menu(message: Message):
                 [KeyboardButton(text="🎮 Play Bingo"), KeyboardButton(text="🧪 Demo Mode")],
                 [KeyboardButton(text="💰 Deposit"), KeyboardButton(text="💳 Withdraw")],
                 [KeyboardButton(text="📊 My Stats"), KeyboardButton(text="📈 Leaderboard")],
-                [KeyboardButton(text="🌐 Language"), KeyboardButton(text="🧾 Transactions")]
+                [KeyboardButton(text="🌐 Language"), KeyboardButton(text="🧾 Transactions")],
+                [KeyboardButton(text="📋 Instructions"), KeyboardButton(text="📨 Invite Friends")],
+                [KeyboardButton(text="💱 Convert Coins"), KeyboardButton(text="💼 Game History")],
+                [KeyboardButton(text="💸 Check Balance")]
             ],
             resize_keyboard=True
         )
@@ -212,12 +215,10 @@ async def process_withdrawal_request(message: Message, state: FSMContext):
 # 🎮 Game Room Selection
 @router.message(F.text == "🎮 Play Bingo")
 async def process_play_command(message: Message):
-    user_id = message.from_user.id
-    with app.app_context():
-        user = User.query.filter_by(telegram_id
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"{price} Birr Room", callback_data=f"room_{price}")] for price in GAME_PRICES
+    ])
 
-                                                [InlineKeyboardButton(text=f"{price} Birr Room", callback_data=f"room_{price}")] for price in GAME_PRICES
-        ])
         await message.answer("Choose your Bingo room:", reply_markup=keyboard)
 
 @router.callback_query(lambda c: c.data.startswith('room_'))
@@ -269,7 +270,7 @@ async def process_room_selection(callback_query: CallbackQuery):
 async def demo_mode(message: Message):
     await message.answer("🎮 Demo Mode activated!\nYou can play without spending real money.\nEnjoy testing the game!")
 
-# 📊 Stats
+# 📊 My Stats
 @router.message(F.text == "📊 My Stats")
 async def process_stats_command(message: Message):
     try:
@@ -301,7 +302,7 @@ async def leaderboard(message: Message):
             board += f"{i}. @{user.username or 'Anonymous'} - {user.games_won} wins\n"
         await message.answer(board)
 
-# 🌐 Language Toggle
+# 🌐 Language
 @router.message(F.text == "🌐 Language")
 async def language_toggle(message: Message, state: FSMContext):
     await state.set_state(UserState.waiting_for_language)
@@ -334,30 +335,38 @@ async def transaction_history(message: Message):
             history += f"{tx.created_at.strftime('%Y-%m-%d')} - {tx.type} - {tx.amount} birr ({tx.status})\n"
         await message.answer(history)
 
-# 🔐 Admin Commands
-@router.message(Command("approve"))
-async def approve_withdrawals(message: Message):
-    with app.app_context():
-        pending = Transaction.query.filter_by(type='withdraw', status='pending').all()
-        if not pending:
-            await message.answer("✅ No pending withdrawals.")
-            return
-        for tx in pending:
-            tx.status = 'approved'
-            db.session.commit()
-        await message.answer(f"✅ Approved {len(pending)} withdrawals.")
+# ✅ New Commands You Requested
 
-@router.message(Command("reject"))
-async def reject_withdrawals(message: Message):
+@router.message(F.text == "💸 Check Balance")
+async def check_balance(message: Message):
     with app.app_context():
-        pending = Transaction.query.filter_by(type='withdraw', status='pending').all()
-        if not pending:
-            await message.answer("✅ No pending withdrawals.")
-            return
-        for tx in pending:
-            tx.status = 'rejected'
-            db.session.commit()
-        await message.answer(f"❌ Rejected {len(pending)} withdrawals.")
+        user = User.query.filter_by(telegram_id=message.from_user.id).first()
+        await message.answer(f"💰 Your current balance is: {user.balance:.2f} birr")
+
+@router.message(F.text == "💱 Convert Coins")
+async def convert_coins(message: Message):
+    await message.answer("🔄 Coin conversion feature is coming soon!")
+
+@router.message(F.text == "💼 Game History")
+async def game_history(message: Message):
+    await message.answer("📋 Game history feature is under development. Stay tuned!")
+
+@router.message(F.text == "📋 Instructions")
+async def game_instructions(message: Message):
+    await message.answer(
+        "📋 How to Play Arada Bingo:\n\n"
+        "1. Deposit funds to join a room.\n"
+        "2. Choose a Bingo room based on entry price.\n"
+        "3. Select your cartela and wait for numbers to be called.\n"
+        "4. Win by matching patterns!\n\n"
+        "🎯 Demo Mode is available for free testing."
+    )
+
+@router.message(F.text == "📨 Invite Friends")
+async def invite_friends(message: Message):
+    bot_info = await bot.get_me()
+    referral_link = f"https://t.me/{bot_info.username}?start={message.from_user.id}"
+    await message.answer(f"📨 Share this link to invite friends:\n{referral_link}")
 
 # 🚀 Bot Startup
 async def main():
