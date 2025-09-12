@@ -368,6 +368,48 @@ async def invite_friends(message: Message):
     referral_link = f"https://t.me/{bot_info.username}?start={message.from_user.id}"
     await message.answer(f"📨 Share this link to invite friends:\n{referral_link}")
 
+# 🔁 Command Aliases for Player Features
+
+@router.message(Command("play"))
+async def cmd_play(message: Message):
+    await process_play_command(message)
+
+@router.message(Command("balance"))
+async def cmd_balance(message: Message):
+    await check_balance(message)
+
+@router.message(Command("withdraw"))
+async def cmd_withdraw(message: Message, state: FSMContext):
+    await process_withdraw_command(message, state)
+
+@router.message(Command("deposit"))
+async def cmd_deposit(message: Message, state: FSMContext):
+    await process_deposit_command(message, state)
+
+@router.message(Command("language"))
+async def cmd_language(message: Message, state: FSMContext):
+    await language_toggle(message, state)
+
+@router.message(Command("convert"))
+async def cmd_convert(message: Message):
+    await convert_coins(message)
+
+@router.message(Command("transaction"))
+async def cmd_transaction(message: Message):
+    await transaction_history(message)
+
+@router.message(Command("game"))
+async def cmd_game(message: Message):
+    await game_history(message)
+
+@router.message(Command("instruction"))
+async def cmd_instruction(message: Message):
+    await game_instructions(message)
+
+@router.message(Command("invite"))
+async def cmd_invite(message: Message):
+    await invite_friends(message)
+
 # 🚀 Bot Startup
 async def main():
     try:
