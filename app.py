@@ -7,24 +7,19 @@ from datetime import datetime
 from database import db, init_db
 from game_logic import BingoGame
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 🔧 Logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Create Flask app
+# 🚀 Flask App
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
-
-# Initialize database
 init_db(app)
 
-# Import models after db initialization
+# 📦 Models
 from models import User, Game, GameParticipant, Transaction
 
-# Game storage (temporary, will be moved to database)
+# 🎮 Active Games (temporary)
 active_games = {}
 
 @app.route('/')
@@ -33,6 +28,7 @@ def index():
         session['user_id'] = random.randint(1, 1000000)
     return render_template('game_lobby.html')
 
+# 💰 Deposit Webhook
 @app.route('/webhook/deposit', methods=['POST'])
 def deposit_webhook():
     try:
@@ -57,6 +53,7 @@ def deposit_webhook():
         logger.exception(f"Webhook error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# 🧪 Webhook Test
 @app.route('/webhook/test', methods=['POST'])
 def test_webhook():
     try:
@@ -120,27 +117,27 @@ def test_webhook():
             "help": "Send a POST request with Content-Type: application/json"
         }), 500
 
-@app.route('/game/create', methods=['GET', 'POST'])
+# 🎮 Create Game
+@app.route('/game/create', methods=['POST'])
 def create_game():
     try:
-        if request.method == 'POST':
-            entry_price = int(request.json.get('entry_price', 10))
-            user_id = request.json.get('user_id')
+        data = request.get_json()
+        entry_price = int(data.get('entry_price', 10))
+        user_id = data.get('user_id')
 
-            if entry_price not in [10, 20, 50, 100]:
-                return jsonify({'error': 'Invalid entry price'}), 400
+        if entry_price not in [10, 20, 30, 50, 100]:
+            return jsonify({'error': 'Invalid entry price'}), 400
 
-            game_id = len(active_games) + 1
-            active_games[game_id] = BingoGame(game_id, entry_price)
-            session['user_id'] = user_id
+        game_id = len(active_games) + 1
+        active_games[game_id] = BingoGame(game_id, entry_price)
+        session['user_id'] = user_id
 
-            return jsonify({'game_id': game_id, 'entry_price': entry_price})
-        else:
-            return jsonify({'error': 'Invalid method'}), 405
+        return jsonify({'game_id': game_id, 'entry_price': entry_price})
     except Exception as e:
         logger.exception(f"Create game error: {str(e)}")
         return jsonify({'error': 'Failed to create game'}), 500
 
+# 🎯 Cartela Selection
 @app.route('/game/<int:game_id>/select_cartela')
 def select_cartela(game_id):
     if game_id not in active_games:
@@ -154,6 +151,7 @@ def select_cartela(game_id):
                            entry_price=game.entry_price,
                            used_cartelas=used_cartelas)
 
+# 🎮 Play Game
 @app.route('/game/<int:game_id>')
 def play_game(game_id):
     if game_id not in active_games:
@@ -189,6 +187,7 @@ def play_game(game_id):
                            game_status=game.status,
                            entry_price=game.entry_price)
 
+# 🔢 Call Number
 @app.route('/game/<int:game_id>/call', methods=['POST'])
 def call_number(game_id):
     if game_id not in active_games:
@@ -203,6 +202,7 @@ def call_number(game_id):
         return jsonify({'number': number, 'called_numbers': game.called_numbers})
     return jsonify({'error': 'No more numbers'}), 400
 
+# ✅ Mark Number
 @app.route('/game/<int:game_id>/mark', methods=['POST'])
 def mark_number(game_id):
     if game_id not in active_games:
@@ -232,7 +232,7 @@ def mark_number(game_id):
         'message': message
     })
 
-# 🔐 Admin Panel
+# 🔐 Admin Login
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if request.method == "POST":
@@ -242,3 +242,16 @@ def admin_login():
         if username == os.getenv("ADMIN_USERNAME") and password == os.getenv("ADMIN_PASSWORD"):
             session["admin"] = True
             return redirect(url_for("admin_dashboard"))
+        return "Invalid credentials", 403
+    return render_template("admin_login.html")
+
+# 🧭 Admin Dashboard
+@app.route("/admin/dashboard")
+def admin_dashboard():
+    if not session.get("admin"):
+        return redirect(url_for("admin_login"))
+    return render_template("admin_dashboard.html")
+
+# 🟢 Flask Startup
+if __name__ == "__main__":
+    app.run(host="0.0.
