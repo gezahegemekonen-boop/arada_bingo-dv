@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from models import db, User, Game, GameParticipant, Transaction
-from game_logic import generate_cartela, check_win, call_next_number
+from game_logic import BingoGame
 from datetime import datetime
 import os
 
@@ -11,53 +11,39 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///ara
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 
+# In-memory game store
+active_games = {}
+
 @app.route("/game/create", methods=["POST"])
 def create_game():
     data = request.json
-    host_id = data.get("host_id")
-    cartela = generate_cartela()
-    game = Game(host_id=host_id, status="waiting", called_numbers=[], created_at=datetime.utcnow())
-    db.session.add(game)
-    db.session.commit()
-
-    participant = GameParticipant(game_id=game.id, user_id=host_id, cartela=cartela)
-    db.session.add(participant)
-    db.session.commit()
-
-    return jsonify({"game_id": game.id, "cartela": cartela})
+    entry_price = data.get("entry_price", 10)
+    game = BingoGame(game_id=len(active_games) + 1, entry_price=entry_price)
+    active_games[game.game_id] = game
+    return jsonify({"game_id": game.game_id})
 
 @app.route("/game/join", methods=["POST"])
 def join_game():
     data = request.json
     game_id = data.get("game_id")
     user_id = data.get("user_id")
+    cartela_number = data.get("cartela_number")
 
-    game = Game.query.get(game_id)
-    if not game or game.status != "waiting":
-        return jsonify({"error": "Game not available"}), 400
-
-    cartela = generate_cartela()
-    participant = GameParticipant(game_id=game.id, user_id=user_id, cartela=cartela)
-    db.session.add(participant)
-    db.session.commit()
-
-    return jsonify({"cartela": cartela})
-
-@app.route("/game/play/<int:game_id>", methods=["GET"])
-def play_game(game_id):
-    game = Game.query.get(game_id)
+    game = active_games.get(game_id)
     if not game:
         return jsonify({"error": "Game not found"}), 404
 
-    participants = GameParticipant.query.filter_by(game_id=game_id).all()
-    data = {
-        "called_numbers": game.called_numbers,
-        "players": [
-            {"user_id": p.user_id, "cartela": p.cartela, "marked": p.marked_numbers}
-            for p in participants
-        ]
-    }
-    return jsonify(data)
+    board = game.add_player(user_id, cartela_number)
+    return jsonify({"cartela": board})
+
+@app.route("/game/call/<int:game_id>", methods=["POST"])
+def call_number(game_id):
+    game = active_games.get(game_id)
+    if not game:
+        return jsonify({"error": "Game not found"}), 404
+
+    result = game.call_number()
+    return jsonify(result)
 
 @app.route("/game/mark", methods=["POST"])
 def mark_number():
@@ -66,35 +52,33 @@ def mark_number():
     user_id = data.get("user_id")
     number = data.get("number")
 
-    participant = GameParticipant.query.filter_by(game_id=game_id, user_id=user_id).first()
-    if not participant:
-        return jsonify({"error": "Participant not found"}), 404
-
-    if number not in participant.marked_numbers:
-        participant.marked_numbers.append(number)
-        db.session.commit()
-
-    win = check_win(participant.cartela, participant.marked_numbers)
-    return jsonify({"marked": participant.marked_numbers, "win": win})
-
-@app.route("/game/call/<int:game_id>", methods=["POST"])
-def call_number(game_id):
-    game = Game.query.get(game_id)
+    game = active_games.get(game_id)
     if not game:
         return jsonify({"error": "Game not found"}), 404
 
-    next_number = call_next_number(game.called_numbers)
-    game.called_numbers.append(next_number)
-    db.session.commit()
+    updated = game.mark_number(user_id, number)
+    win, message = game.check_winner(user_id)
 
-    return jsonify({"next_number": next_number})
+    if win:
+        game.end_game(user_id)
+
+    return jsonify({
+        "marked": updated,
+        "win": win,
+        "message": message
+    })
 
 @app.route("/deposit", methods=["POST"])
 def deposit():
     data = request.json
     user_id = data.get("user_id")
+    amount = data.get("amount")
     method = data.get("method")
-    reference = data.get("reference")
+    phone = data.get("phone")
+    code = data.get("code")
+
+    if amount < 30:
+        return jsonify({"error": "Minimum deposit is 30 ETB"}), 400
 
     user = User.query.get(user_id)
     if not user:
@@ -103,22 +87,26 @@ def deposit():
     tx = Transaction(
         user_id=user.id,
         type="deposit",
-        amount=0,  # Admin will update manually
+        amount=amount,
         method=method,
-        reference=reference,
-        status="pending",
-        created_at=datetime.utcnow()
+        deposit_phone=phone,
+        transaction_id=code,
+        status="completed",
+        created_at=datetime.utcnow(),
+        completed_at=datetime.utcnow()
     )
     db.session.add(tx)
+    user.balance += amount
     db.session.commit()
 
-    return jsonify({"message": "Deposit logged. Awaiting admin approval."})
+    return jsonify({"message": "Deposit confirmed", "new_balance": user.balance})
 
 @app.route("/withdraw", methods=["POST"])
 def withdraw():
     data = request.json
     user_id = data.get("user_id")
     amount = data.get("amount")
+    phone = data.get("phone")
 
     user = User.query.get(user_id)
     if not user or user.balance < amount:
@@ -128,6 +116,8 @@ def withdraw():
         user_id=user.id,
         type="withdraw",
         amount=amount,
+        withdrawal_phone=phone,
+        withdrawal_status="pending",
         status="pending",
         created_at=datetime.utcnow()
     )
@@ -161,11 +151,12 @@ def approve_transaction(tx_id):
         return jsonify({"error": "Transaction not found or already processed"}), 400
 
     tx.status = "approved"
+    tx.completed_at = datetime.utcnow()
+
+    user = User.query.get(tx.user_id)
     if tx.type == "deposit":
-        user = User.query.get(tx.user_id)
         user.balance += tx.amount
     elif tx.type == "withdraw":
-        user = User.query.get(tx.user_id)
         user.balance -= tx.amount
 
     db.session.commit()
@@ -180,6 +171,19 @@ def reject_transaction(tx_id):
     tx.status = "rejected"
     db.session.commit()
     return jsonify({"message": "Transaction rejected."})
+
+@app.route("/leaderboard", methods=["GET"])
+def leaderboard():
+    top_users = User.query.order_by(User.games_won.desc(), User.balance.desc()).limit(10).all()
+    data = [
+        {
+            "username": user.username,
+            "wins": user.games_won,
+            "balance": user.balance
+        }
+        for user in top_users
+    ]
+    return jsonify(data)
 
 if __name__ == "__main__":
     with app.app_context():
