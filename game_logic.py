@@ -8,8 +8,8 @@ class BingoGame:
         self.game_id = game_id
         self.entry_price = entry_price
         self.pool = 0
-        self.players: Dict[int, List[dict]] = {}  # user_id -> list of boards
-        selfcalled_numbers: List[int] = []
+        self.players: Dict[int, List[dict]] = {}
+        self.called_numbers: List[int] = []
         self.status = "waiting"
         self.winner_id = None
         self.created_at = datetime.utcnow()
@@ -18,8 +18,11 @@ class BingoGame:
         self.max_players = 100
         self.last_call_time = None
         self.auto_call_timer = None
-        self.call_interval = 3.5  # seconds
-        self.leaderboard: Dict[int, Dict[str, int]] = {}  # user_id -> {"wins": x, "earnings": y}
+        self.call_interval = 3.5
+        self.leaderboard: Dict[int, Dict[str, int]] = {}
+        self.player_modes: Dict[int, str] = {}  # "auto" or "manual"
+        self.sound_enabled: Dict[int, bool] = {}  # True or False
+        self.admin_earnings = 0
 
     def generate_board(self, cartela_number: int) -> List[int]:
         random.seed(cartela_number)
@@ -29,18 +32,17 @@ class BingoGame:
         g = random.sample(range(46, 61), 5)
         o = random.sample(range(61, 76), 5)
         random.seed()
-
         board = []
         for row in range(5):
             board.extend([b[row], i[row], n[row], g[row], o[row]])
         return board
 
-    def add_player(self, user_id: int, cartela_number: Optional[int] = None) -> List[int]:
+    def add_player(self, user_id: int, cartela_number: Optional[int] = None, mode: str = "auto") -> List[int]:
         if user_id not in self.players:
             self.players[user_id] = []
 
         if len(self.players[user_id]) >= 5:
-            return []  # Max 5 boards per player
+            return []
 
         used_cartelas = {b['cartela_number'] for boards in self.players.values() for b in boards}
         available = [n for n in range(1, 101) if n not in used_cartelas]
@@ -49,10 +51,12 @@ class BingoGame:
         board = self.generate_board(cartela_number)
         self.players[user_id].append({
             'board': board,
-            'marked': [board[12]],  # Center is free
+            'marked': [board[12]],
             'cartela_number': cartela_number
         })
         self.pool += self.entry_price
+        self.player_modes[user_id] = mode
+        self.sound_enabled[user_id] = True
 
         if self.status == "waiting" and self.total_players() >= self.min_players:
             self.start_game()
@@ -71,8 +75,9 @@ class BingoGame:
     def schedule_next_call(self):
         if self.status != "active":
             return
-        self.auto_call_timer = threading.Timer(self.call_interval, self.auto_call)
-        self.auto_call_timer.start()
+        if "auto" in self.player_modes.values():
+            self.auto_call_timer = threading.Timer(self.call_interval, self.auto_call)
+            self.auto_call_timer.start()
 
     def auto_call(self):
         if self.status != "active":
@@ -80,7 +85,7 @@ class BingoGame:
         self.call_number()
         self.schedule_next_call()
 
-    def call_number(self) -> Optional[str]:
+    def call_number(self) -> Optional[Dict[str, Optional[str]]]:
         available = [n for n in range(1, 76) if n not in self.called_numbers]
         if not available:
             self.status = "finished"
@@ -90,24 +95,29 @@ class BingoGame:
         number = random.choice(available)
         self.called_numbers.append(number)
         self.last_call_time = datetime.utcnow()
-        return self.format_number(number)
+
+        return {
+            "formatted": self.format_number(number),
+            "audio": self.audio_filename(number)
+        }
 
     @staticmethod
     def format_number(number: int) -> str:
-        if 1 <= number <= 15:
-            return f"B-{number}"
-        elif 16 <= number <= 30:
-            return f"I-{number}"
-        elif 31 <= number <= 45:
-            return f"N-{number}"
-        elif 46 <= number <= 60:
-            return f"G-{number}"
-        else:
-            return f"O-{number}"
+        if 1 <= number <= 15: return f"B-{number}"
+        elif 16 <= number <= 30: return f"I-{number}"
+        elif 31 <= number <= 45: return f"N-{number}"
+        elif 46 <= number <= 60: return f"G-{number}"
+        else: return f"O-{number}"
 
     @staticmethod
     def audio_filename(number: int) -> str:
         return f"{BingoGame.format_number(number)}.mp3"
+
+    def toggle_sound(self, user_id: int, enabled: bool):
+        self.sound_enabled[user_id] = enabled
+
+    def toggle_mode(self, user_id: int, mode: str):
+        self.player_modes[user_id] = mode
 
     def mark_number(self, user_id: int, number: int) -> bool:
         if user_id not in self.players:
@@ -129,28 +139,25 @@ class BingoGame:
             marked = set(board['marked'])
             b = board['board']
 
-            # Validate marked numbers
-            for num in marked:
-                if num not in b and num != b[12]:
-                    continue
-                if num not in self.called_numbers and num != b[12]:
-                    continue
-
-            # Check rows
+            # Rows
             for i in range(0, 25, 5):
                 if all(b[i + j] in marked for j in range(5)):
                     return True, "Winner - Row complete!"
 
-            # Check columns
+            # Columns
             for i in range(5):
                 if all(b[i + j*5] in marked for j in range(5)):
                     return True, "Winner - Column complete!"
 
-            # Check diagonals
+            # Diagonals
             if all(b[i] in marked for i in [0, 6, 12, 18, 24]):
                 return True, "Winner - Diagonal complete!"
             if all(b[i] in marked for i in [4, 8, 12, 16, 20]):
                 return True, "Winner - Diagonal complete!"
+
+            # Corners
+            if all(b[i] in marked for i in [0, 4, 20, 24]):
+                return True, "Winner - Corner complete!"
 
         return False, "Keep playing"
 
@@ -161,11 +168,14 @@ class BingoGame:
         if self.auto_call_timer:
             self.auto_call_timer.cancel()
 
-        # Payout logic
+        commission = int(self.pool * 0.20)
+        payout = self.pool - commission
+        self.admin_earnings = commission
+
         if winner_id not in self.leaderboard:
             self.leaderboard[winner_id] = {"wins": 0, "earnings": 0}
         self.leaderboard[winner_id]["wins"] += 1
-        self.leaderboard[winner_id]["earnings"] += self.pool
+        self.leaderboard[winner_id]["earnings"] += payout
 
     def get_leaderboard(self, top_n: int = 10) -> List[Tuple[int, int, int]]:
         sorted_lb = sorted(
