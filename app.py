@@ -1,155 +1,187 @@
-import os
-import json
-import time
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-from database import db, init_db
-from models import User, Game, GameParticipant, Transaction
-from game_logic import (
-    create_game, join_game, mark_number, check_win,
-    call_next_number, get_game_state
-)
+from flask import Flask, request, jsonify, session
+from flask_sqlalchemy import SQLAlchemy
+from models import db, User, Game, GameParticipant, Transaction
+from game_logic import generate_cartela, check_win, call_next_number
 from datetime import datetime
+import os
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SESSION_SECRET", "secret")
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.secret_key = os.getenv("FLASK_SECRET", "arada_secret_key")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///arada.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
 
-init_db(app)
-
-# -------------------------
-# Player Routes
-# -------------------------
-
-@app.route('/')
-def lobby():
-    return render_template('game_lobby.html')
-
-@app.route('/game/create', methods=['POST'])
-def create_new_game():
-    data = request.get_json()
-    entry_price = data.get('entry_price')
-    game = create_game(entry_price)
-    return jsonify({"game_id": game.id})
-
-@app.route('/game/list')
-def list_games():
-    games = Game.query.filter(Game.status.in_(["waiting", "countdown"])).all()
-    return jsonify([{
-        "id": g.id,
-        "players": len(g.participants),
-        "entry_price": g.entry_price
-    } for g in games])
-
-@app.route('/game/<int:game_id>/select')
-def select_cartela(game_id):
-    game = Game.query.get_or_404(game_id)
-    used_cartelas = [p.cartela_number for p in game.participants]
-    return render_template('cartela_selection.html',
-                           game_id=game.id,
-                           entry_price=game.entry_price,
-                           used_cartelas=used_cartelas)
-
-@app.route('/game/<int:game_id>/join', methods=['POST'])
-def join_cartela(game_id):
-    data = request.get_json()
-    cartela_number = data.get('cartela_number')
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({"error": "Not logged in"}), 403
-    join_game(game_id, user_id, cartela_number)
-    return jsonify({"game_id": game_id})
-
-@app.route('/game/<int:game_id>')
-def play_game(game_id):
-    state = get_game_state(game_id, session.get('user_id'))
-    return render_template('game.html', **state)
-
-@app.route('/game/<int:game_id>/mark', methods=['POST'])
-def mark_cell(game_id):
-    data = request.get_json()
-    user_id = session.get('user_id')
-    if data.get('check_win'):
-        return jsonify(check_win(game_id, user_id))
-    else:
-        return jsonify(mark_number(game_id, user_id, data.get('number')))
-
-@app.route('/game/<int:game_id>/call', methods=['POST'])
-def call_number(game_id):
-    user_id = session.get('user_id')
-    auto_mode = session.get('auto_mode', True)
-    if auto_mode:
-        return jsonify(call_next_number(game_id))
-    else:
-        return jsonify({"error": "Manual mode active"})
-
-@app.route('/game/<int:game_id>/toggle_auto', methods=['POST'])
-def toggle_auto(game_id):
-    session['auto_mode'] = not session.get('auto_mode', True)
-    return jsonify({"auto_mode": session['auto_mode']})
-
-@app.route('/game/<int:game_id>/toggle_sound', methods=['POST'])
-def toggle_sound(game_id):
-    session['sound_enabled'] = not session.get('sound_enabled', True)
-    return jsonify({"sound_enabled": session['sound_enabled']})
-
-from flask import flash
-
-# -------------------------
-# Admin Routes
-# -------------------------
-
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        if username == os.getenv("ADMIN_USERNAME") and password == os.getenv("ADMIN_PASSWORD"):
-            session['admin'] = True
-            return redirect(url_for('admin_dashboard'))
-        else:
-            flash("Invalid credentials")
-    return render_template('admin_login.html')
-
-@app.route('/admin/logout')
-def admin_logout():
-    session.pop('admin', None)
-    return redirect(url_for('admin_login'))
-
-@app.route('/admin')
-def admin_dashboard():
-    if not session.get('admin'):
-        return redirect(url_for('admin_login'))
-
-    pending_tx = Transaction.query.filter_by(status="pending").all()
-    recent_games = Game.query.order_by(Game.created_at.desc()).limit(10).all()
-    return render_template('admin_dashboard.html',
-                           transactions=pending_tx,
-                           games=recent_games)
-
-@app.route('/admin/approve/<int:tx_id>')
-def approve_tx(tx_id):
-    if not session.get('admin'):
-        return redirect(url_for('admin_login'))
-
-    tx = Transaction.query.get_or_404(tx_id)
-    tx.status = "approved"
+@app.route("/game/create", methods=["POST"])
+def create_game():
+    data = request.json
+    host_id = data.get("host_id")
+    cartela = generate_cartela()
+    game = Game(host_id=host_id, status="waiting", called_numbers=[], created_at=datetime.utcnow())
+    db.session.add(game)
     db.session.commit()
-    return redirect(url_for('admin_dashboard'))
 
-@app.route('/admin/reject/<int:tx_id>')
-def reject_tx(tx_id):
-    if not session.get('admin'):
-        return redirect(url_for('admin_login'))
+    participant = GameParticipant(game_id=game.id, user_id=host_id, cartela=cartela)
+    db.session.add(participant)
+    db.session.commit()
 
-    tx = Transaction.query.get_or_404(tx_id)
+    return jsonify({"game_id": game.id, "cartela": cartela})
+
+@app.route("/game/join", methods=["POST"])
+def join_game():
+    data = request.json
+    game_id = data.get("game_id")
+    user_id = data.get("user_id")
+
+    game = Game.query.get(game_id)
+    if not game or game.status != "waiting":
+        return jsonify({"error": "Game not available"}), 400
+
+    cartela = generate_cartela()
+    participant = GameParticipant(game_id=game.id, user_id=user_id, cartela=cartela)
+    db.session.add(participant)
+    db.session.commit()
+
+    return jsonify({"cartela": cartela})
+
+@app.route("/game/play/<int:game_id>", methods=["GET"])
+def play_game(game_id):
+    game = Game.query.get(game_id)
+    if not game:
+        return jsonify({"error": "Game not found"}), 404
+
+    participants = GameParticipant.query.filter_by(game_id=game_id).all()
+    data = {
+        "called_numbers": game.called_numbers,
+        "players": [
+            {"user_id": p.user_id, "cartela": p.cartela, "marked": p.marked_numbers}
+            for p in participants
+        ]
+    }
+    return jsonify(data)
+
+@app.route("/game/mark", methods=["POST"])
+def mark_number():
+    data = request.json
+    game_id = data.get("game_id")
+    user_id = data.get("user_id")
+    number = data.get("number")
+
+    participant = GameParticipant.query.filter_by(game_id=game_id, user_id=user_id).first()
+    if not participant:
+        return jsonify({"error": "Participant not found"}), 404
+
+    if number not in participant.marked_numbers:
+        participant.marked_numbers.append(number)
+        db.session.commit()
+
+    win = check_win(participant.cartela, participant.marked_numbers)
+    return jsonify({"marked": participant.marked_numbers, "win": win})
+
+@app.route("/game/call/<int:game_id>", methods=["POST"])
+def call_number(game_id):
+    game = Game.query.get(game_id)
+    if not game:
+        return jsonify({"error": "Game not found"}), 404
+
+    next_number = call_next_number(game.called_numbers)
+    game.called_numbers.append(next_number)
+    db.session.commit()
+
+    return jsonify({"next_number": next_number})
+
+@app.route("/deposit", methods=["POST"])
+def deposit():
+    data = request.json
+    user_id = data.get("user_id")
+    method = data.get("method")
+    reference = data.get("reference")
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    tx = Transaction(
+        user_id=user.id,
+        type="deposit",
+        amount=0,  # Admin will update manually
+        method=method,
+        reference=reference,
+        status="pending",
+        created_at=datetime.utcnow()
+    )
+    db.session.add(tx)
+    db.session.commit()
+
+    return jsonify({"message": "Deposit logged. Awaiting admin approval."})
+
+@app.route("/withdraw", methods=["POST"])
+def withdraw():
+    data = request.json
+    user_id = data.get("user_id")
+    amount = data.get("amount")
+
+    user = User.query.get(user_id)
+    if not user or user.balance < amount:
+        return jsonify({"error": "Insufficient balance"}), 400
+
+    tx = Transaction(
+        user_id=user.id,
+        type="withdraw",
+        amount=amount,
+        status="pending",
+        created_at=datetime.utcnow()
+    )
+    db.session.add(tx)
+    db.session.commit()
+
+    return jsonify({"message": "Withdrawal request submitted."})
+
+@app.route("/admin/transactions", methods=["GET"])
+def admin_transactions():
+    txs = Transaction.query.order_by(Transaction.created_at.desc()).limit(50).all()
+    data = []
+    for tx in txs:
+        user = User.query.get(tx.user_id)
+        data.append({
+            "id": tx.id,
+            "user": user.username if user else "unknown",
+            "type": tx.type,
+            "amount": tx.amount,
+            "method": tx.method,
+            "reference": tx.reference,
+            "status": tx.status,
+            "created_at": tx.created_at.isoformat()
+        })
+    return jsonify(data)
+
+@app.route("/admin/approve/<int:tx_id>", methods=["POST"])
+def approve_transaction(tx_id):
+    tx = Transaction.query.get(tx_id)
+    if not tx or tx.status != "pending":
+        return jsonify({"error": "Transaction not found or already processed"}), 400
+
+    tx.status = "approved"
+    if tx.type == "deposit":
+        user = User.query.get(tx.user_id)
+        user.balance += tx.amount
+    elif tx.type == "withdraw":
+        user = User.query.get(tx.user_id)
+        user.balance -= tx.amount
+
+    db.session.commit()
+    return jsonify({"message": "Transaction approved."})
+
+@app.route("/admin/reject/<int:tx_id>", methods=["POST"])
+def reject_transaction(tx_id):
+    tx = Transaction.query.get(tx_id)
+    if not tx or tx.status != "pending":
+        return jsonify({"error": "Transaction not found or already processed"}), 400
+
     tx.status = "rejected"
     db.session.commit()
-    return redirect(url_for('admin_dashboard'))
-
-# -------------------------
-# App Runner
-# -------------------------
+    return jsonify({"message": "Transaction rejected."})
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)
