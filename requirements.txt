@@ -1,5 +1,5 @@
 aiofiles==24.1.0
-aiogram==3.18.0
+python-telegram-bot==20.7
 aiohappyeyeballs==2.4.8
 aiohttp==3.11.13
 aiohttp-retry==2.9.1
