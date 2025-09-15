@@ -184,7 +184,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-     async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
    async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     telegram_id = str(update.effective_user.id)
