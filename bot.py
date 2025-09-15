@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 )
@@ -9,7 +10,6 @@ from telegram.ext import (
 )
 from database import db, init_db
 from models import User, Transaction, Game, GameParticipant
-from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -107,6 +107,7 @@ async def toggle_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.callback_query.edit_message_text(lang["language_set"])
 
+# Deposit menu and method
 async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     keyboard = [
@@ -124,15 +125,15 @@ async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     method = update.callback_query.data.split("_")[1]
     context.chat_data["deposit_method"] = method
 
-    if method == "cbe_birr":
-        msg = "📲 CBE Birr Deposit:\nSend to 0920927761 and reply with your transaction ID."
-    elif method == "telebirr":
-        msg = "📲 Telebirr Deposit:\nSend to 0920927761 and reply with your transaction ID."
-    elif method == "cbe_bank":
-        msg = "🏦 CBE Bank Deposit:\nAccount Number: 1000316113347\nThen reply with your transaction ID."
-
+    msg = {
+        "cbe_birr": "📲 CBE Birr Deposit:\nSend to 0920927761 and reply with your transaction ID.",
+        "telebirr": "📲 Telebirr Deposit:\nSend to 0920927761 and reply with your transaction ID.",
+        "cbe_bank": "🏦 CBE Bank Deposit:\nAccount Number: 1000316113347\nThen reply with your transaction ID."
+    }.get(method, "❌ Unknown method.")
+    
     await update.callback_query.edit_message_text(msg)
 
+# Handle transaction ID
 async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -157,6 +158,7 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
 
     await update.message.reply_text("✅ Transaction received. Awaiting admin approval.")
 
+# Withdraw, stats, invite
 async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     lang = LANGUAGE_MAP[context.chat_data.get("language", "en")]
@@ -180,104 +182,4 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.callback_query.edit_message_text(text)
 
-async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    if not user:
-        return
-
-    lang = LANGUAGE_MAP[user.language]
-    link = f"https://t.me/{context.bot.username}?start={user.id}"
-    await update.callback_query.edit_message_text(lang["invite"].format(link=link))
-
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != os.getenv("ADMIN_TELEGRAM_ID"):
-        await update.message.reply_text("🚫 You are not authorized.")
-        return
-
-    pending = Transaction.query.filter_by(type="withdraw", status="pending").all()
-    if not pending:
-        await update.message.reply_text("✅ No pending withdrawals.")
-        return
-
-    for tx in pending:
-        user = User.query.get(tx.user_id)
-        text = f"💸 Withdrawal Request\nUser: @{user.username}\nAmount: {tx.amount} birr\nTX ID: {tx.id}"
-        buttons = [
-            [InlineKeyboardButton("✅ Approve", callback_data=f"approve_{tx.id}"),
-             InlineKeyboardButton("❌ Reject", callback_data=f"reject_{tx.id}")]
-        ]
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-
-    if not str(update.effective_user.id) == os.getenv("ADMIN_TELEGRAM_ID"):
-        await query.edit_message_text("🚫 Not authorized.")
-        return
-
-    if data.startswith("approve_"):
-        tx_id = int(data.split("_")[1])
-        tx = Transaction.query.get(tx_id)
-        if tx and tx.status == "pending":
-            tx.status = "approved"
-            db.session.commit()
-            await query.edit_message_text(f"✅ Withdrawal {tx.id} approved.")
-    elif data.startswith("reject_"):
-        tx_id = int(data.split("_")[1])
-        tx = Transaction.query.get(tx_id)
-        if tx and tx.status == "pending":
-            tx.status = "rejected"
-            db.session.commit()
-            await query.edit_message_text(f"❌ Withdrawal {tx.id} rejected.")
-
-async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎮 Launching Arada Bingo Ethiopia...",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))]
-        ])
-    )
-
-async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    session = context.chat_data
-    session['auto_mode'] = not session.get('auto_mode', True)
-    status = "ON" if session['auto_mode'] else "OFF"
-    await update.message.reply_text(f"🔁 Auto Mode: {status}")
-
-async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    session = context.chat_data
-    session['sound_enabled'] = not session.get('sound_enabled', True)
-    status = "ON" if session['sound_enabled'] else "OFF"
-    await update.message.reply_text(f"🔊 Sound: {status}")
-
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Command handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("play", play_game))
-    app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CommandHandler("auto", toggle_auto_mode))
-    app.add_handler(CommandHandler("sound", toggle_sound))
-
-    # Callback handlers
-    app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
-    app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
-    app.add_handler(CallbackQueryHandler(withdraw, pattern="withdraw"))
-    app.add_handler(CallbackQueryHandler(stats, pattern="stats"))
-    app.add_handler(CallbackQueryHandler(invite, pattern="invite"))
-    app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
-    app.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^(approve_|reject_).*"))
-
-    # Message handler for transaction ID
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
-
-    logging.info("✅ Arada Bingo Ethiopia bot is running...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+async def invite(update: Update, context:
