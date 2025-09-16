@@ -10,6 +10,10 @@ from telegram.ext import (
 )
 from database import db, init_db
 from models import User, Transaction, Game, GameParticipant
+from utils import (
+    is_valid_tx_id, referral_link, toggle_language,
+    format_cartela, build_main_keyboard
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -82,17 +86,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session['language'] = user.language
 
     lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-    keyboard = [
-        [InlineKeyboardButton("🎮 Play Bingo", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))],
-        [InlineKeyboardButton("💰 Deposit", callback_data="deposit_menu"),
-         InlineKeyboardButton("💸 Withdraw", callback_data="withdraw")],
-        [InlineKeyboardButton("📊 My Stats", callback_data="stats"),
-         InlineKeyboardButton("🎁 Invite Friends", callback_data="invite")],
-        [InlineKeyboardButton("🌐 Language: English / አማርኛ", callback_data="toggle_lang")]
-    ]
+    keyboard = build_main_keyboard(lang, WEBAPP_URL)
+
     await update.message.reply_text(
         lang["welcome"],
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=keyboard
     )
 
 async def toggle_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,7 +100,7 @@ async def toggle_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         return
 
-    user.language = "am" if user.language == "en" else "en"
+    user.language = toggle_language(user.language)
     db.session.commit()
 
     context.chat_data['language'] = user.language
@@ -144,7 +142,7 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ You must start the bot first using /start.")
         return
 
-    if len(tx_id) < 6 or not tx_id.isalnum():
+    if not is_valid_tx_id(tx_id):
         await update.message.reply_text("❌ Invalid transaction ID. Please try again.")
         return
 
@@ -177,8 +175,24 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-    bot_username = context.bot.username or "AradaBingoBot"
-    link = f"https://t.me/{bot_username}?start={user.id}"
+    link = referral_link(context.bot.username or "AradaBingoBot", user.id)
+    text = lang["stats"].format(
+        balance=user.balance,
+        played=user.games_played,
+        won=user.games_won,
+        link=link
+    )
+    await update.callback_query.edit_message_text(text)
+
+async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    telegram_id = str(update.effective_user.id)
+    user = User.query.filter_by(telegram_id=telegram_id).first()
+    if not user:
+        return
+
+        lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
+    link = referral_link(context.bot.username or "AradaBingoBot", user.id)
     text = lang["stats"].format(
         balance=user.balance,
         played=user.games_played,
@@ -195,55 +209,8 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-    bot_username = context.bot.username or "AradaBingoBot"
-    link = f"https://t.me/{bot_username}?start={user.id}"
+    link = referral_link(context.bot.username or "AradaBingoBot", user.id)
     await update.callback_query.edit_message_text(lang["invite"].format(link=link))
-
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if ADMIN_ID and str(update.effective_user.id) != ADMIN_ID:
-        await update.message.reply_text("🚫 You are not authorized.")
-        return
-
-    pending = Transaction.query.filter_by(type="withdraw", status="pending").all()
-    if not pending:
-        await update.message.reply_text("✅ No pending withdrawals.")
-        return
-
-    for tx in pending:
-        user = User.query.get(tx.user_id)
-        text = f"💸 Withdrawal Request\nUser: @{user.username}\nAmount: {tx.amount} birr\nTX ID: {tx.id}"
-        buttons = [
-            [InlineKeyboardButton("✅ Approve", callback_data=f"approve_{tx.id}"),
-             InlineKeyboardButton("❌ Reject", callback_data=f"reject_{tx.id}")]
-        ]
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-
-    if ADMIN_ID and str(update.effective_user.id) != ADMIN_ID:
-        await query.edit_message_text("🚫 Not authorized.")
-        return
-
-    tx_id = int(data.split("_")[1])
-    tx = Transaction.query.get(tx_id)
-    if not tx or tx.status != "pending":
-        logging.warning(f"Invalid or duplicate admin action on TX {tx_id}")
-        await query.edit_message_text("❌ Invalid or already processed.")
-        return
-
-    if data.startswith("approve_"):
-        tx.status = "approved"
-        db.session.commit()
-        logging.info(f"Admin approved withdrawal {tx.id}")
-        await query.edit_message_text(f"✅ Withdrawal {tx.id} approved.")
-    elif data.startswith("reject_"):
-        tx.status = "rejected"
-        db.session.commit()
-        logging.info(f"Admin rejected withdrawal {tx.id}")
-        await query.edit_message_text(f"❌ Withdrawal {tx.id} rejected.")
 
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -274,7 +241,6 @@ def main():
     # Command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play_game))
-    app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CommandHandler("auto", toggle_auto_mode))
     app.add_handler(CommandHandler("sound", toggle_sound))
     app.add_handler(CommandHandler("help", help_command))
@@ -289,7 +255,6 @@ def main():
     app.add_handler(CallbackQueryHandler(stats, pattern="stats"))
     app.add_handler(CallbackQueryHandler(invite, pattern="invite"))
     app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
-    app.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^(approve_|reject_).*"))
 
     # Message handler for transaction ID
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
