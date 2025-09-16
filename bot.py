@@ -1,6 +1,8 @@
 import os
 import logging
+import threading
 from datetime import datetime
+from flask import Flask
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 )
@@ -22,8 +24,17 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://your-hosted-webapp.com")
 ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
-if not BOT_TOKEN:
-    raise RuntimeError("TELEGRAM_BOT_TOKEN not set in environment.")
+# Dummy Flask server to satisfy Render's port scan
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "Arada Bingo Bot is running."
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=10000)
+
+threading.Thread(target=run_flask).start()
 
 LANGUAGE_MAP = {
     "en": {
