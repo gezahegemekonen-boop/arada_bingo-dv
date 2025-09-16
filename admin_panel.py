@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from functools import wraps
 from datetime import datetime
+import logging
 from config import (
     ADMIN_USERNAME, ADMIN_PASSWORD, SECRET_KEY,
     FLASK_HOST, FLASK_PORT
@@ -68,6 +69,22 @@ def start_game():
         flash('Could not start game')
     return redirect(url_for('dashboard'))
 
+# 🏁 Finish a game manually (optional)
+@app.route('/admin/game/finish', methods=['POST'])
+@admin_required
+def finish_game():
+    game_id = request.form.get('game_id')
+    game = Game.query.get(game_id)
+
+    if game and game.status == "active":
+        game.status = "finished"
+        game.finished_at = datetime.utcnow()
+        db.session.commit()
+        flash('Game marked as finished')
+    else:
+        flash('Game not active or not found')
+    return redirect(url_for('dashboard'))
+
 # 💸 Approve withdrawal
 @app.route('/admin/withdrawal/approve', methods=['POST'])
 @admin_required
@@ -88,9 +105,30 @@ def approve_withdrawal():
         tx.status = "approved"
         tx.completed_at = datetime.utcnow()
         db.session.commit()
+        logging.info(f"✅ Admin approved withdrawal TX {tx_id} for user {user_id}")
         flash('Withdrawal approved')
     else:
         flash('Insufficient balance')
+    return redirect(url_for('dashboard'))
+
+# ❌ Reject withdrawal
+@app.route('/admin/withdrawal/reject', methods=['POST'])
+@admin_required
+def reject_withdrawal():
+    tx_id = request.form.get('tx_id')
+    reason = request.form.get('reason', 'No reason provided')
+
+    tx = Transaction.query.get(tx_id)
+    if not tx:
+        flash('Transaction not found')
+        return redirect(url_for('dashboard'))
+
+    tx.status = "rejected"
+    tx.admin_note = reason
+    tx.completed_at = datetime.utcnow()
+    db.session.commit()
+    logging.info(f"❌ Admin rejected withdrawal TX {tx_id} with reason: {reason}")
+    flash('Withdrawal rejected')
     return redirect(url_for('dashboard'))
 
 # 🚪 Logout
