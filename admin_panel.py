@@ -20,7 +20,6 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# 🔑 Login page
 @app.route('/admin/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -32,7 +31,6 @@ def login():
         flash('Invalid credentials')
     return render_template('admin/login.html')
 
-# 📊 Admin dashboard
 @app.route('/admin/dashboard')
 @admin_required
 def dashboard():
@@ -40,7 +38,6 @@ def dashboard():
     games = Game.query.all()
     pending_withdrawals = Transaction.query.filter_by(type="withdraw", status="pending").all()
     pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
-
     return render_template(
         'admin/dashboard.html',
         players=players,
@@ -51,7 +48,6 @@ def dashboard():
         total_players=User.query.count()
     )
 
-# 🎮 Start a game manually
 @app.route('/admin/game/start', methods=['POST'])
 @admin_required
 def start_game():
@@ -67,7 +63,6 @@ def start_game():
         flash('Could not start game')
     return redirect(url_for('dashboard'))
 
-# 🏁 Finish a game manually
 @app.route('/admin/game/finish', methods=['POST'])
 @admin_required
 def finish_game():
@@ -82,7 +77,6 @@ def finish_game():
         flash('Game not active or not found')
     return redirect(url_for('dashboard'))
 
-# 💸 Approve withdrawal
 @app.route('/admin/withdrawal/approve', methods=['POST'])
 @admin_required
 def approve_withdrawal():
@@ -105,7 +99,6 @@ def approve_withdrawal():
         flash('Insufficient balance')
     return redirect(url_for('dashboard'))
 
-# ❌ Reject withdrawal
 @app.route('/admin/withdrawal/reject', methods=['POST'])
 @admin_required
 def reject_withdrawal():
@@ -123,7 +116,6 @@ def reject_withdrawal():
     flash('Withdrawal rejected')
     return redirect(url_for('dashboard'))
 
-# ✅ Approve deposit
 @app.route('/admin/deposit/approve', methods=['POST'])
 @admin_required
 def approve_deposit():
@@ -141,7 +133,6 @@ def approve_deposit():
     flash('Deposit approved')
     return redirect(url_for('dashboard'))
 
-# ❌ Reject deposit
 @app.route('/admin/deposit/reject', methods=['POST'])
 @admin_required
 def reject_deposit():
@@ -159,7 +150,41 @@ def reject_deposit():
     flash('Deposit rejected')
     return redirect(url_for('dashboard'))
 
-# 🚪 Logout
+@app.route('/admin/user/<int:user_id>')
+@admin_required
+def user_profile(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        flash("User not found")
+        return redirect(url_for("dashboard"))
+    return render_template("admin/user.html", user=user)
+
+@app.route('/admin/update_balance/<int:user_id>', methods=["POST"])
+@admin_required
+def update_balance(user_id):
+    amount = float(request.form.get("amount", 0))
+    user = User.query.get(user_id)
+    if user:
+        user.balance += amount
+        db.session.commit()
+        flash(f"💰 Updated balance for {user.username}")
+    return redirect(url_for("user_profile", user_id=user_id))
+
+@app.route('/admin/cartela/<int:game_id>/<int:user_id>/<int:cartela_number>')
+@admin_required
+def view_cartela(game_id, user_id, cartela_number):
+    from models import GameParticipant, Game
+    participant = GameParticipant.query.filter_by(
+        game_id=game_id,
+        user_id=user_id,
+        cartela_number=cartela_number
+    ).first()
+    game = Game.query.get(game_id)
+    if not participant or not game:
+        flash("Cartela not found")
+        return redirect(url_for("dashboard"))
+    return render_template("admin/cartela_viewer.html", participant=participant, game=game)
+
 @app.route('/admin/logout')
 @admin_required
 def logout():
@@ -167,6 +192,5 @@ def logout():
     flash('Logged out successfully')
     return redirect(url_for('login'))
 
-# 🚀 Run the app
 if __name__ == '__main__':
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=True)
