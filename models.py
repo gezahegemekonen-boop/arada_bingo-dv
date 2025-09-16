@@ -5,31 +5,32 @@ db = SQLAlchemy()
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    telegram_id = db.Column(db.BigInteger, unique=True, nullable=False)
+    telegram_id = db.Column(db.BigInteger, unique=True, nullable=False, index=True)
     username = db.Column(db.String(64))
     phone = db.Column(db.String(20))
     balance = db.Column(db.Float, default=0.0)
     games_played = db.Column(db.Integer, default=0)
     games_won = db.Column(db.Integer, default=0)
-    sound_enabled = db.Column(db.Boolean, default=True)  # 🔊 Mute/unmute toggle
-    play_mode = db.Column(db.String(10), default="auto")  # "auto" or "manual"
+    sound_enabled = db.Column(db.Boolean, default=True)
+    play_mode = db.Column(db.String(10), default="auto")
     language = db.Column(db.String(10), default="en")
     referrer_id = db.Column(db.BigInteger, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    status = db.Column(db.String(20), default='waiting')  # waiting, active, finished
+    status = db.Column(db.String(20), default='waiting', index=True)
     entry_price = db.Column(db.Float, nullable=False)
     pool = db.Column(db.Float, default=0.0)
-    payout = db.Column(db.Float, default=0.0)  # 💰 Winner payout
-    commission = db.Column(db.Float, default=0.0)  # 🧾 Admin commission
-    called_numbers = db.Column(db.PickleType)  # ✅ Native Python list
+    payout = db.Column(db.Float, default=0.0)
+    commission = db.Column(db.Float, default=0.0)
+    called_numbers = db.Column(db.PickleType)
     winner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     finished_at = db.Column(db.DateTime)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     participants = db.relationship('GameParticipant', backref='game', lazy=True)
     winner = db.relationship('User', backref='won_games', lazy=True)
 
@@ -38,7 +39,7 @@ class GameParticipant(db.Model):
     game_id = db.Column(db.Integer, db.ForeignKey('game.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     cartela_number = db.Column(db.Integer, nullable=False)
-    marked_numbers = db.Column(db.PickleType)  # ✅ Native Python list
+    marked_numbers = db.Column(db.PickleType)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -48,27 +49,29 @@ class GameParticipant(db.Model):
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    type = db.Column(db.String(20))  # deposit, withdraw, win, game_entry, commission, manual_payout
+    type = db.Column(db.String(20), index=True)
     amount = db.Column(db.Float, nullable=False)
-    status = db.Column(db.String(20), default='pending')  # pending, completed, failed
-    method = db.Column(db.String(20))  # telebirr, cbe, manual
-    reference = db.Column(db.String(100))  # payment ref or admin note
+    status = db.Column(db.String(20), default='pending', index=True)
+    method = db.Column(db.String(20))
+    reference = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # For deposits
     deposit_phone = db.Column(db.String(20))
     transaction_id = db.Column(db.String(100))
     sms_text = db.Column(db.Text)
 
-    # For withdrawals
     withdrawal_phone = db.Column(db.String(20))
-    withdrawal_status = db.Column(db.String(20))  # pending, approved, rejected
+    withdrawal_status = db.Column(db.String(20))
     admin_note = db.Column(db.Text)
+
+    user = db.relationship('User', backref='transactions', lazy=True)
 
 class ScheduledGame(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     start_time = db.Column(db.DateTime)
     entry_price = db.Column(db.Float, default=10.0)
-    status = db.Column(db.String(20), default="pending")  # pending, active, finished
+    status = db.Column(db.String(20), default="pending", index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
