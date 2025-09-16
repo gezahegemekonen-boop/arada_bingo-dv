@@ -1,5 +1,6 @@
 import random
 import threading
+import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
@@ -46,7 +47,11 @@ class BingoGame:
 
         used_cartelas = {b['cartela_number'] for boards in self.players.values() for b in boards}
         available = [n for n in range(1, 101) if n not in used_cartelas]
-        cartela_number = cartela_number or (random.choice(available) if available else 0)
+        if not available:
+            logging.warning("No available cartela numbers left.")
+            cartela_number = 0
+        else:
+            cartela_number = cartela_number or random.choice(available)
 
         board = self.generate_board(cartela_number)
         self.players[user_id].append({
@@ -67,6 +72,8 @@ class BingoGame:
         return sum(len(boards) for boards in self.players.values())
 
     def start_game(self) -> bool:
+        if self.status != "waiting":
+            return False
         self.status = "active"
         self.call_number()
         self.schedule_next_call()
@@ -100,6 +107,13 @@ class BingoGame:
             "formatted": self.format_number(number),
             "audio": self.audio_filename(number)
         }
+
+    def manual_call(self, number: int) -> bool:
+        if number in self.called_numbers or not (1 <= number <= 75):
+            return False
+        self.called_numbers.append(number)
+        self.last_call_time = datetime.utcnow()
+        return True
 
     @staticmethod
     def format_number(number: int) -> str:
@@ -184,3 +198,15 @@ class BingoGame:
             reverse=True
         )
         return [(uid, data["wins"], data["earnings"]) for uid, data in sorted_lb[:top_n]]
+
+    def summary(self) -> Dict[str, any]:
+        return {
+            "game_id": self.game_id,
+            "status": self.status,
+            "players": self.total_players(),
+            "pool": self.pool,
+            "called": len(self.called_numbers),
+            "winner": self.winner_id,
+            "created_at": self.created_at,
+            "finished_at": self.finished_at
+        }
