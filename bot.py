@@ -17,6 +17,9 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://your-hosted-webapp.com")
 ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
+if not BOT_TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN not set in environment.")
+
 LANGUAGE_MAP = {
     "en": {
         "welcome": "Welcome to Arada Bingo Ethiopia!",
@@ -54,16 +57,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             telegram_id=telegram_id,
             username=username,
             balance=0,
-            referred_by=referral_id,
-            language="en",
-            has_played=False
+            referrer_id=referral_id,
+            language="en"
         )
         db.session.add(user)
         db.session.commit()
 
     if referral_id and referral_id != user.id:
         referrer = User.query.get(referral_id)
-        if referrer and not user.has_played:
+        if referrer:
             referrer.balance += 5
             db.session.add(Transaction(
                 user_id=referrer.id,
@@ -162,7 +164,6 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
     logging.info(f"User {telegram_id} submitted deposit via {method}: {tx_id}")
     await update.message.reply_text("✅ Transaction received. Awaiting admin approval.")
 
-# Withdraw, stats, invite
 async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
@@ -199,7 +200,6 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     link = f"https://t.me/{bot_username}?start={user.id}"
     await update.callback_query.edit_message_text(lang["invite"].format(link=link))
 
-# Admin panel
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ADMIN_ID and str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("🚫 You are not authorized.")
@@ -231,6 +231,7 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     tx_id = int(data.split("_")[1])
     tx = Transaction.query.get(tx_id)
     if not tx or tx.status != "pending":
+        logging.warning(f"Invalid or duplicate admin action on TX {tx_id}")
         await query.edit_message_text("❌ Invalid or already processed.")
         return
 
@@ -245,7 +246,6 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         logging.info(f"Admin rejected withdrawal {tx.id}")
         await query.edit_message_text(f"❌ Withdrawal {tx.id} rejected.")
 
-# Game launcher
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎮 Launching Arada Bingo Ethiopia...",
@@ -254,7 +254,6 @@ async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
-# Toggles
 async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = context.chat_data
     session['auto_mode'] = not session.get('auto_mode', True)
@@ -267,23 +266,22 @@ async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = "ON" if session['sound_enabled'] else "OFF"
     await update.message.reply_text(f"🔊 Sound: {status}")
 
-# Optional help command
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ Use /start to begin. Tap buttons to deposit, play, or invite friends.")
 
-# Main function
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play_game))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CommandHandler("auto", toggle_auto_mode))
     app.add_handler(CommandHandler("sound", toggle_sound))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("stats", stats))     # ✅ New
+    app.add_handler(CommandHandler("invite", invite))   # ✅ New
+    app.add_handler(CommandHandler("lang", toggle_language))  # ✅ Optional
 
-    # Callback handlers
     app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
     app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
     app.add_handler(CallbackQueryHandler(withdraw, pattern="withdraw"))
@@ -292,7 +290,6 @@ def main():
     app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
     app.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^(approve_|reject_).*"))
 
-    # Message handler for transaction ID
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
 
     logging.info("✅ Arada Bingo Ethiopia bot is running...")
