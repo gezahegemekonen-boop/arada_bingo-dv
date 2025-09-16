@@ -1,21 +1,27 @@
-<h3>Pending Withdrawals</h3>
+<h3>Games</h3>
 <table>
   <tr>
-    <th>User</th>
-    <th>Amount</th>
-    <th>Action</th>
+    <th>ID</th>
+    <th>Status</th>
+    <th>Pool</th>
+    <th>Winner</th>
+    <th>Start</th>
   </tr>
-  {% for tx in pending_withdrawals %}
+  {% for game in games %}
   <tr>
-    <td>@{{ tx.user.username }}</td>
-    <td>{{ tx.amount }} birr</td>
+    <td>{{ game.id }}</td>
+    <td>{{ game.status }}</td>
+    <td>{{ game.pool }} birr</td>
+    <td>{{ game.winner.username if game.winner else '—' }}</td>
     <td>
-      <form method="POST" action="{{ url_for('approve_withdrawal') }}">
-        <input type="hidden" name="user_id" value="{{ tx.user_id }}">
-        <input type="hidden" name="tx_id" value="{{ tx.id }}">
-        <input type="hidden" name="amount" value="{{ tx.amount }}">
-        <button type="submit">✅ Approve</button>
+      {% if game.status == 'waiting' %}
+      <form method="POST" action="{{ url_for('start_game') }}">
+        <input type="hidden" name="game_id" value="{{ game.id }}">
+        <button type="submit">🎮 Start</button>
       </form>
+      {% else %}
+        —
+      {% endif %}
     </td>
   </tr>
   {% endfor %}
