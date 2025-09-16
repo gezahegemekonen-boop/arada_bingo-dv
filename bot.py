@@ -186,7 +186,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text("❌ No stats found.")
         return
 
-    lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
+        lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
     link = referral_link(context.bot.username or "AradaBingoBot", user.id)
     text = lang["stats"].format(
         balance=user.balance,
@@ -230,6 +230,11 @@ async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ Use /start to begin. Tap buttons to deposit, play, or invite friends.")
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logging.error("Exception while handling an update:", exc_info=context.error)
+    if isinstance(update, Update) and update.message:
+        await update.message.reply_text("⚠️ Something went wrong. Please try again.")
+
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -254,8 +259,12 @@ def main():
     # Message handler for transaction ID
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
 
+    # Global error handler
+    app.add_error_handler(error_handler)
+
     logging.info("✅ Arada Bingo Ethiopia bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
+
