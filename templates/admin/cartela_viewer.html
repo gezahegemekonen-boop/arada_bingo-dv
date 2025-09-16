@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Cartela Viewer – Arada Bingo Ethiopia</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <style>
+        .cartela-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 4px;
+            margin-top: 10px;
+        }
+        .cell {
+            padding: 6px;
+            text-align: center;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .marked {
+            background-color: #28a745;
+            color: white;
+        }
+        .unmarked {
+            background-color: #222;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h2>🧾 Cartela Viewer</h2>
+        <p>Game ID: {{ game.id }} | Player: {{ participant.user.username }} | Mode: {{ participant.mode }}</p>
+        <p>Cartela #: {{ participant.cartela_number }} | Count: {{ participant.cartela_count }}</p>
+
+        <div class="cartela-grid">
+            {% for number in participant.board %}
+                {% if number in participant.marked %}
+                    <div class="cell marked">{{ number }}</div>
+                {% else %}
+                    <div class="cell unmarked">{{ number }}</div>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <br>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">⬅️ Back to Dashboard</a>
+    </div>
+</body>
+</html>
