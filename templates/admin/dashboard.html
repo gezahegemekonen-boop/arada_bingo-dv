@@ -1,85 +1,147 @@
 <!DOCTYPE html>
-<html lang="en">
+<html data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard – Arada Bingo Ethiopia</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
 </head>
 <body>
-    <h2>📊 Admin Dashboard</h2>
-    <p>Total Players: {{ total_players }}</p>
-    <p>Active Games: {{ active_games }}</p>
-
-    <h3>💸 Pending Withdrawals</h3>
-    {% for tx in pending_withdrawals %}
-        <div>
-            <p>User: {{ tx.user.username }} | Amount: {{ tx.amount }} birr</p>
-            <form method="POST" action="{{ url_for('approve_withdrawal') }}">
-                <input type="hidden" name="user_id" value="{{ tx.user.id }}">
-                <input type="hidden" name="tx_id" value="{{ tx.id }}">
-                <input type="hidden" name="amount" value="{{ tx.amount }}">
-                <button type="submit">✅ Approve</button>
-            </form>
-            <form method="POST" action="{{ url_for('reject_withdrawal') }}">
-                <input type="hidden" name="tx_id" value="{{ tx.id }}">
-                <input type="text" name="reason" placeholder="Reason">
-                <button type="submit">❌ Reject</button>
-            </form>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">Arada Bingo Admin</a>
+            <a class="btn btn-outline-light" href="{{ url_for('logout') }}">🚪 Logout</a>
         </div>
-    {% endfor %}
+    </nav>
 
-    <h3>💰 Pending Deposits</h3>
-    {% for tx in pending_deposits %}
-        <div>
-            <p>User: {{ tx.user.username }} | Amount: {{ tx.amount }} birr | Ref: {{ tx.reference }}</p>
-            <form method="POST" action="{{ url_for('approve_deposit') }}">
-                <input type="hidden" name="tx_id" value="{{ tx.id }}">
-                <button type="submit">✅ Approve</button>
-            </form>
-            <form method="POST" action="{{ url_for('reject_deposit') }}">
-                <input type="hidden" name="tx_id" value="{{ tx.id }}">
-                <input type="text" name="reason" placeholder="Reason">
-                <button type="submit">❌ Reject</button>
-            </form>
-        </div>
-    {% endfor %}
-
-    <h3>🎮 Games</h3>
-    {% for game in games %}
-        <div>
-            <p>Game ID: {{ game.id }} | Status: {{ game.status }} | Pool: {{ game.pool }} birr</p>
-            {% if game.status == 'waiting' %}
-                <form method="POST" action="{{ url_for('start_game') }}">
-                    <input type="hidden" name="game_id" value="{{ game.id }}">
-                    <button type="submit">▶️ Start</button>
-                </form>
-            {% elif game.status == 'active' %}
-                <form method="POST" action="{{ url_for('finish_game') }}">
-                    <input type="hidden" name="game_id" value="{{ game.id }}">
-                    <button type="submit">🏁 Finish</button>
-                </form>
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-info">{{ message }}</div>
+                {% endfor %}
             {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">📊 Statistics</h5>
+                        <p>Total Players: {{ total_players }}</p>
+                        <p>Active Games: {{ active_games }}</p>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">💸 Pending Withdrawals</h5>
+                        {% for tx in pending_withdrawals %}
+                            <div class="mb-3 border p-2">
+                                <p>User: {{ tx.user.username }} | Amount: {{ tx.amount }} birr</p>
+                                <form method="POST" action="{{ url_for('approve_withdrawal') }}" class="d-inline">
+                                    <input type="hidden" name="user_id" value="{{ tx.user.id }}">
+                                    <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                    <input type="hidden" name="amount" value="{{ tx.amount }}">
+                                    <button type="submit" class="btn btn-sm btn-success">✅ Approve</button>
+                                </form>
+                                <form method="POST" action="{{ url_for('reject_withdrawal') }}" class="d-inline">
+                                    <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                    <input type="text" name="reason" placeholder="Reason" class="form-control form-control-sm mt-1">
+                                    <button type="submit" class="btn btn-sm btn-danger mt-1">❌ Reject</button>
+                                </form>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">💰 Pending Deposits</h5>
+                        {% for tx in pending_deposits %}
+                            <div class="mb-3 border p-2">
+                                <p>User: {{ tx.user.username }} | Amount: {{ tx.amount }} birr | Ref: {{ tx.reference }}</p>
+                                <form method="POST" action="{{ url_for('approve_deposit') }}" class="d-inline">
+                                    <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                    <button type="submit" class="btn btn-sm btn-success">✅ Approve</button>
+                                </form>
+                                <form method="POST" action="{{ url_for('reject_deposit') }}" class="d-inline">
+                                    <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                    <input type="text" name="reason" placeholder="Reason" class="form-control form-control-sm mt-1">
+                                    <button type="submit" class="btn btn-sm btn-danger mt-1">❌ Reject</button>
+                                </form>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">🎮 Games</h5>
+                        <table class="table table-dark table-bordered table-sm">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Status</th>
+                                    <th>Pool</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for game in games %}
+                                    <tr>
+                                        <td>{{ game.id }}</td>
+                                        <td>{{ game.status }}</td>
+                                        <td>{{ game.pool }}</td>
+                                        <td>
+                                            {% if game.status == 'waiting' %}
+                                                <form method="POST" action="{{ url_for('start_game') }}" class="d-inline">
+                                                    <input type="hidden" name="game_id" value="{{ game.id }}">
+                                                    <button type="submit" class="btn btn-sm btn-primary">▶️ Start</button>
+                                                </form>
+                                            {% elif game.status == 'active' %}
+                                                <form method="POST" action="{{ url_for('finish_game') }}" class="d-inline">
+                                                    <input type="hidden" name="game_id" value="{{ game.id }}">
+                                                    <button type="submit" class="btn btn-sm btn-warning">🏁 Finish</button>
+                                                </form>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">👥 Players</h5>
+                        <table class="table table-dark table-bordered table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Balance</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for player in players %}
+                                    <tr>
+                                        <td>{{ player.username }}</td>
+                                        <td>{{ player.balance }}</td>
+                                        <td>
+                                            <a href="{{ url_for('user_profile', user_id=player.id) }}" class="btn btn-sm btn-info">View</a>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
-    {% endfor %}
-
-    <h3>👥 Players</h3>
-    {% for player in players %}
-        <div>
-            <p>{{ player.username }} | Balance: {{ player.balance }} birr</p>
-            <a href="{{ url_for('user_profile', user_id=player.id) }}">View Profile</a>
-        </div>
-    {% endfor %}
-
-    <br><a href="{{ url_for('logout') }}">🚪 Logout</a>
-
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <ul>
-          {% for msg in messages %}
-            <li>{{ msg }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    {% endwith %}
+    </div>
 </body>
 </html>
