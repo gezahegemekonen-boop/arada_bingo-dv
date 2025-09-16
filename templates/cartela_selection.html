@@ -45,13 +45,13 @@
 </head>
 <body>
     <div class="container mt-4">
-        <div class="game-info">
-            <h2 class="text-center">Game #{{ game_id }}</h2>
-            <p class="text-center mb-0">Entry Price: {{ entry_price }} Birr</p>
+        <div class="game-info text-center">
+            <h2>Game #{{ game_id }}</h2>
+            <p>Entry Price: {{ entry_price }} Birr</p>
         </div>
-        
+
         <h3 class="text-center mb-4">Select Your Cartela Number</h3>
-        
+
         <div class="cartela-grid">
             {% for i in range(1, 101) %}
                 <div class="cartela-number {% if i in used_cartelas %}unavailable{% endif %}"
@@ -69,6 +69,8 @@
                 return;
             }
 
+            document.body.style.cursor = 'wait';
+
             fetch(`/game/{{ game_id }}/join`, {
                 method: 'POST',
                 headers: {
@@ -78,6 +80,7 @@
             })
             .then(response => response.json())
             .then(data => {
+                document.body.style.cursor = 'default';
                 if (data.error) {
                     alert(data.error);
                 } else {
@@ -85,6 +88,7 @@
                 }
             })
             .catch(error => {
+                document.body.style.cursor = 'default';
                 console.error('Error:', error);
                 alert('Failed to join game. Please try again.');
             });
