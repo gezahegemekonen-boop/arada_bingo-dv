@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: arada-bingo-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        value: your-telegram-bot-token
+      - key: WEBAPP_URL
+        value: https://your-hosted-webapp.com
+      - key: ADMIN_TELEGRAM_ID
+        value: your-admin-id
+      - key: DATABASE_URL
+        value: sqlite:///arada_bingo.db
+      - key: SECRET_KEY
+        value: your-secret-key
+      - key: ADMIN_USERNAME
+        value: aradaadmin
+      - key: ADMIN_PASSWORD
+        value: securepassword
