@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://your-hosted-webapp.com")
+ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
 LANGUAGE_MAP = {
     "en": {
@@ -78,7 +79,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session['sound_enabled'] = True
     session['language'] = user.language
 
-    lang = LANGUAGE_MAP[user.language]
+    lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
     keyboard = [
         [InlineKeyboardButton("🎮 Play Bingo", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))],
         [InlineKeyboardButton("💰 Deposit", callback_data="deposit_menu"),
@@ -107,7 +108,6 @@ async def toggle_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.callback_query.edit_message_text(lang["language_set"])
 
-# Deposit menu and method
 async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     keyboard = [
@@ -133,7 +133,6 @@ async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.callback_query.edit_message_text(msg)
 
-# Handle transaction ID
 async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -142,6 +141,10 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
 
     if not user:
         await update.message.reply_text("❌ You must start the bot first using /start.")
+        return
+
+    if len(tx_id) < 6 or not tx_id.isalnum():
+        await update.message.reply_text("❌ Invalid transaction ID. Please try again.")
         return
 
     tx = Transaction(
@@ -156,12 +159,13 @@ async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TY
     db.session.add(tx)
     db.session.commit()
 
+    logging.info(f"User {telegram_id} submitted deposit via {method}: {tx_id}")
     await update.message.reply_text("✅ Transaction received. Awaiting admin approval.")
 
 # Withdraw, stats, invite
 async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
-    lang = LANGUAGE_MAP[context.chat_data.get("language", "en")]
+    lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
     await update.callback_query.edit_message_text(lang["withdraw"])
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -169,11 +173,12 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if not user:
-        await update.callback_query.edit_message_text("No stats found.")
+        await update.callback_query.edit_message_text("❌ No stats found.")
         return
 
-    lang = LANGUAGE_MAP[user.language]
-    link = f"https://t.me/{context.bot.username}?start={user.id}"
+    lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
+    bot_username = context.bot.username or "AradaBingoBot"
+    link = f"https://t.me/{bot_username}?start={user.id}"
     text = lang["stats"].format(
         balance=user.balance,
         played=user.games_played,
@@ -189,12 +194,14 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         return
 
-    lang = LANGUAGE_MAP[user.language]
-    link = f"https://t.me/{context.bot.username}?start={user.id}"
+    lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
+    bot_username = context.bot.username or "AradaBingoBot"
+    link = f"https://t.me/{bot_username}?start={user.id}"
     await update.callback_query.edit_message_text(lang["invite"].format(link=link))
 
+# Admin panel
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != os.getenv("ADMIN_TELEGRAM_ID"):
+    if ADMIN_ID and str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("🚫 You are not authorized.")
         return
 
@@ -217,7 +224,7 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     data = query.data
 
-    if str(update.effective_user.id) != os.getenv("ADMIN_TELEGRAM_ID"):
+    if ADMIN_ID and str(update.effective_user.id) != ADMIN_ID:
         await query.edit_message_text("🚫 Not authorized.")
         return
 
@@ -230,12 +237,15 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     if data.startswith("approve_"):
         tx.status = "approved"
         db.session.commit()
+        logging.info(f"Admin approved withdrawal {tx.id}")
         await query.edit_message_text(f"✅ Withdrawal {tx.id} approved.")
     elif data.startswith("reject_"):
         tx.status = "rejected"
         db.session.commit()
+        logging.info(f"Admin rejected withdrawal {tx.id}")
         await query.edit_message_text(f"❌ Withdrawal {tx.id} rejected.")
 
+# Game launcher
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎮 Launching Arada Bingo Ethiopia...",
@@ -244,6 +254,7 @@ async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
+# Toggles
 async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = context.chat_data
     session['auto_mode'] = not session.get('auto_mode', True)
@@ -256,6 +267,11 @@ async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = "ON" if session['sound_enabled'] else "OFF"
     await update.message.reply_text(f"🔊 Sound: {status}")
 
+# Optional help command
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("ℹ️ Use /start to begin. Tap buttons to deposit, play, or invite friends.")
+
+# Main function
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -265,6 +281,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CommandHandler("auto", toggle_auto_mode))
     app.add_handler(CommandHandler("sound", toggle_sound))
+    app.add_handler(CommandHandler("help", help_command))
 
     # Callback handlers
     app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
