@@ -1,9 +1,12 @@
-import re
-
-def is_valid_phone(phone):
+def is_valid_tx_id(tx_id):
     """
-    Validates Ethiopian phone numbers.
-    Accepts formats like: 0912345678, +251912345678, 251912345678
+    Validates a transaction ID format.
+    Must be a non-empty string starting with 'TX' and at least 6 characters.
     """
-    pattern = r'^(?:\+251|251|0)?9\d{8}$'
-    return bool(re.match(pattern, phone))
+    if not isinstance(tx_id, str):
+        return False
+    if not tx_id.startswith("TX"):
+        return False
+    if len(tx_id) < 6:
+        return False
+    return tx_id.isalnum()
