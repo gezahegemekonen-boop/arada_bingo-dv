@@ -10,13 +10,11 @@ from telegram.ext import (
 )
 from database import db, init_db
 from models import User, Transaction, Game, GameParticipant
-from utils import (
-    is_valid_tx_id,
-    referral_link,
-    toggle_language,
-    format_cartela,
-    build_main_keyboard,
-)
+from utils.is_valid_tx_id import is_valid_tx_id
+from utils.referral_link import referral_link
+from utils.toggle_language import toggle_language
+from utils.format_cartela import format_cartela
+from utils.build_main_keyboard import build_main_keyboard
 
 logging.basicConfig(level=logging.INFO)
 
@@ -178,23 +176,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-    link = referral_link(context.bot.username or "AradaBingoBot", user.id)
-    text = lang["stats"].format(
-        balance=user.balance,
-        played=user.games_played,
-        won=user.games_won,
-        link=link
-    )
-    await update.callback_query.edit_message_text(text)
-
-async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    if not user:
-        return
-
-        lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
     link = referral_link(context.bot.username or "AradaBingoBot", user.id)
     text = lang["stats"].format(
         balance=user.balance,
