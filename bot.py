@@ -10,9 +10,12 @@ from telegram.ext import (
 )
 from database import db, init_db
 from models import User, Transaction, Game, GameParticipant
-from utils import (
-    is_valid_tx_id, referral_link, toggle_language,
-    format_cartela, build_main_keyboard
+from utils.helpers import (
+    is_valid_tx_id,
+    referral_link,
+    toggle_language,
+    format_cartela,
+    build_main_keyboard,
 )
 
 logging.basicConfig(level=logging.INFO)
