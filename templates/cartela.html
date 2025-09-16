@@ -11,11 +11,17 @@
     <h1>🎯 Cartela Bingo</h1>
     <div id="game-info">
       <p>Game ID: <span id="game-id">{{ game_id }}</span></p>
-      <p>Stake: <span id="stake">10 ETB</span></p>
-      <p>Players: <span id="players">14</span></p>
-      <p>Derash: <span id="derash">112 ETB</span></p>
+      <p>Stake: <span id="stake">{{ entry_price }} ETB</span></p>
+      <p>Players: <span id="players">{{ player_count }}</span></p>
+      <p>Derash: <span id="derash">{{ pool }} ETB</span></p>
+      <p>🔊 Sound: {{ 'On' if sound_enabled else 'Muted' }}</p>
+      <p>🎮 Mode: {{ play_mode.capitalize() }}</p>
     </div>
   </header>
+
+  <div id="win-banner" style="display:none; background:#28a745; color:white; padding:10px; text-align:center;">
+    🎉 You won! Congratulations!
+  </div>
 
   <section id="bonus-grid">
     <h2>Bonus Numbers</h2>
@@ -32,6 +38,10 @@
     <button id="add-cartela">➕ Add Cartela</button>
     <button id="bingo">🎉 BINGO</button>
   </section>
+
+  <div id="loading" style="display:none; text-align:center;">
+    <p>⏳ Loading...</p>
+  </div>
 
   <footer>
     <p>© Arada Bingo Ethiopia 2025</p>
