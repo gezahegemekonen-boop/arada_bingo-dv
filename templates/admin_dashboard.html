@@ -1,28 +1,95 @@
-<h3>Games</h3>
-<table>
-  <tr>
-    <th>ID</th>
-    <th>Status</th>
-    <th>Pool</th>
-    <th>Winner</th>
-    <th>Start</th>
-  </tr>
-  {% for game in games %}
-  <tr>
-    <td>{{ game.id }}</td>
-    <td>{{ game.status }}</td>
-    <td>{{ game.pool }} birr</td>
-    <td>{{ game.winner.username if game.winner else '—' }}</td>
-    <td>
-      {% if game.status == 'waiting' %}
-      <form method="POST" action="{{ url_for('start_game') }}">
-        <input type="hidden" name="game_id" value="{{ game.id }}">
-        <button type="submit">🎮 Start</button>
-      </form>
-      {% else %}
-        —
-      {% endif %}
-    </td>
-  </tr>
-  {% endfor %}
-</table>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arada Bingo Admin Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        h3 { margin-top: 40px; }
+        button { padding: 6px 12px; }
+    </style>
+</head>
+<body>
+
+    <h1>🎯 Arada Bingo Admin Dashboard</h1>
+
+    <!-- ✅ Pending Withdrawals -->
+    <h3>Pending Withdrawals</h3>
+    <table>
+        <tr>
+            <th>User</th>
+            <th>Amount</th>
+            <th>Action</th>
+        </tr>
+        {% for tx in pending_withdrawals %}
+        <tr>
+            <td>@{{ tx.user.username }}</td>
+            <td>{{ tx.amount }} birr</td>
+            <td>
+                <form method="POST" action="{{ url_for('approve_withdrawal') }}">
+                    <input type="hidden" name="user_id" value="{{ tx.user_id }}">
+                    <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                    <input type="hidden" name="amount" value="{{ tx.amount }}">
+                    <button type="submit">✅ Approve</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <!-- 🎮 Game Control Panel -->
+    <h3>Games</h3>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Status</th>
+            <th>Pool</th>
+            <th>Winner</th>
+            <th>Start</th>
+        </tr>
+        {% for game in games %}
+        <tr>
+            <td>{{ game.id }}</td>
+            <td>{{ game.status }}</td>
+            <td>{{ game.pool }} birr</td>
+            <td>{{ game.winner.username if game.winner else '—' }}</td>
+            <td>
+                {% if game.status == 'waiting' %}
+                <form method="POST" action="{{ url_for('start_game') }}">
+                    <input type="hidden" name="game_id" value="{{ game.id }}">
+                    <button type="submit">🎮 Start</button>
+                </form>
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <!-- 👥 Player Summary -->
+    <h3>Players</h3>
+    <table>
+        <tr>
+            <th>Username</th>
+            <th>Balance</th>
+            <th>Games Played</th>
+            <th>Games Won</th>
+        </tr>
+        {% for player in players %}
+        <tr>
+            <td>@{{ player.username }}</td>
+            <td>{{ player.balance }} birr</td>
+            <td>{{ player.games_played }}</td>
+            <td>{{ player.games_won }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <p><a href="{{ url_for('logout') }}">🚪 Logout</a></p>
+
+</body>
+</html>
