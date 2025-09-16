@@ -107,7 +107,6 @@ async def toggle_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.chat_data['language'] = user.language
     lang = LANGUAGE_MAP[user.language]
-
     await update.callback_query.edit_message_text(lang["language_set"])
 
 async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -272,16 +271,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # Command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play_game))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CommandHandler("auto", toggle_auto_mode))
     app.add_handler(CommandHandler("sound", toggle_sound))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("stats", stats))     # ✅ New
-    app.add_handler(CommandHandler("invite", invite))   # ✅ New
-    app.add_handler(CommandHandler("lang", toggle_language))  # ✅ Optional
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("invite", invite))
+    app.add_handler(CommandHandler("lang", toggle_language))
 
+    # Callback handlers
     app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
     app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
     app.add_handler(CallbackQueryHandler(withdraw, pattern="withdraw"))
@@ -290,6 +291,7 @@ def main():
     app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
     app.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^(approve_|reject_).*"))
 
+    # Message handler for transaction ID
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
 
     logging.info("✅ Arada Bingo Ethiopia bot is running...")
@@ -297,3 +299,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
