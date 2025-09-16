@@ -26,13 +26,10 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
             return redirect(url_for('dashboard'))
-        else:
-            flash('Invalid credentials')
-            
+        flash('Invalid credentials')
     return render_template('admin/login.html')
 
 # 📊 Admin dashboard
@@ -42,12 +39,14 @@ def dashboard():
     players = User.query.all()
     games = Game.query.all()
     pending_withdrawals = Transaction.query.filter_by(type="withdraw", status="pending").all()
+    pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
 
     return render_template(
         'admin/dashboard.html',
         players=players,
         games=games,
         pending_withdrawals=pending_withdrawals,
+        pending_deposits=pending_deposits,
         active_games=Game.query.filter_by(status="active").count(),
         total_players=User.query.count()
     )
@@ -58,7 +57,6 @@ def dashboard():
 def start_game():
     game_id = request.form.get('game_id')
     game = Game.query.get(game_id)
-
     if game and game.status == "waiting":
         game.status = "active"
         game.called_numbers = []
@@ -69,13 +67,12 @@ def start_game():
         flash('Could not start game')
     return redirect(url_for('dashboard'))
 
-# 🏁 Finish a game manually (optional)
+# 🏁 Finish a game manually
 @app.route('/admin/game/finish', methods=['POST'])
 @admin_required
 def finish_game():
     game_id = request.form.get('game_id')
     game = Game.query.get(game_id)
-
     if game and game.status == "active":
         game.status = "finished"
         game.finished_at = datetime.utcnow()
@@ -92,14 +89,11 @@ def approve_withdrawal():
     user_id = request.form.get('user_id')
     tx_id = request.form.get('tx_id')
     amount = float(request.form.get('amount'))
-
     user = User.query.get(user_id)
     tx = Transaction.query.get(tx_id)
-
     if not user or not tx:
         flash('User or transaction not found')
         return redirect(url_for('dashboard'))
-
     if user.balance >= amount:
         user.balance -= amount
         tx.status = "approved"
@@ -117,18 +111,52 @@ def approve_withdrawal():
 def reject_withdrawal():
     tx_id = request.form.get('tx_id')
     reason = request.form.get('reason', 'No reason provided')
-
     tx = Transaction.query.get(tx_id)
     if not tx:
         flash('Transaction not found')
         return redirect(url_for('dashboard'))
-
     tx.status = "rejected"
     tx.admin_note = reason
     tx.completed_at = datetime.utcnow()
     db.session.commit()
     logging.info(f"❌ Admin rejected withdrawal TX {tx_id} with reason: {reason}")
     flash('Withdrawal rejected')
+    return redirect(url_for('dashboard'))
+
+# ✅ Approve deposit
+@app.route('/admin/deposit/approve', methods=['POST'])
+@admin_required
+def approve_deposit():
+    tx_id = request.form.get('tx_id')
+    tx = Transaction.query.get(tx_id)
+    if not tx or tx.status != "pending":
+        flash('Invalid transaction')
+        return redirect(url_for('dashboard'))
+    user = tx.user
+    user.balance += tx.amount
+    tx.status = "approved"
+    tx.completed_at = datetime.utcnow()
+    db.session.commit()
+    logging.info(f"✅ Admin approved deposit TX {tx_id} for user {user.id}")
+    flash('Deposit approved')
+    return redirect(url_for('dashboard'))
+
+# ❌ Reject deposit
+@app.route('/admin/deposit/reject', methods=['POST'])
+@admin_required
+def reject_deposit():
+    tx_id = request.form.get('tx_id')
+    reason = request.form.get('reason', 'No reason provided')
+    tx = Transaction.query.get(tx_id)
+    if not tx:
+        flash('Transaction not found')
+        return redirect(url_for('dashboard'))
+    tx.status = "rejected"
+    tx.admin_note = reason
+    tx.completed_at = datetime.utcnow()
+    db.session.commit()
+    logging.info(f"❌ Admin rejected deposit TX {tx_id} with reason: {reason}")
+    flash('Deposit rejected')
     return redirect(url_for('dashboard'))
 
 # 🚪 Logout
