@@ -2,7 +2,7 @@ import random
 import threading
 import logging
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 
 class BingoGame:
     def __init__(self, game_id: int, entry_price: int = 10):
@@ -199,7 +199,39 @@ class BingoGame:
         )
         return [(uid, data["wins"], data["earnings"]) for uid, data in sorted_lb[:top_n]]
 
-    def summary(self) -> Dict[str, any]:
+    def get_player_summary(self, user_id: int) -> List[Dict[str, Any]]:
+        return [
+            {
+                "cartela_number": b["cartela_number"],
+                "marked": b["marked"],
+                "mode": self.player_modes.get(user_id, "auto"),
+                "sound": self.sound_enabled.get(user_id, True)
+            }
+            for b in self.players.get(user_id, [])
+        ]
+
+    def get_called_history(self) -> List[str]:
+        return [self.format_number(n) for n in self.called_numbers]
+
+    def get_winner_board(self) -> Optional[List[int]]:
+        if self.winner_id and self.winner_id in self.players:
+            return self.players[self.winner_id][0]["board"]
+        return None
+
+    def is_ready(self) -> bool:
+        return self.status == "waiting" and self.total_players() >= self.min_players
+
+    def reset_game(self):
+        self.status = "waiting"
+        self.called_numbers.clear()
+        self.winner_id = None
+        self.finished_at = None
+        self.last_call_time = None
+        if self.auto_call_timer:
+            self.auto_call_timer.cancel()
+        logging.info(f"Game {self.game_id} reset.")
+
+        def summary(self) -> Dict[str, Any]:
         return {
             "game_id": self.game_id,
             "status": self.status,
@@ -208,5 +240,6 @@ class BingoGame:
             "called": len(self.called_numbers),
             "winner": self.winner_id,
             "created_at": self.created_at,
-            "finished_at": self.finished_at
+            "finished_at": self.finished_at,
+            "admin_earnings": self.admin_earnings
         }
