@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 from database import db, init_db
 from models import User, Transaction, Game, GameParticipant
-from utils.helpers import (
+from utils import (
     is_valid_tx_id,
     referral_link,
     toggle_language,
