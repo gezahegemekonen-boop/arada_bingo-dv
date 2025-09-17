@@ -1,6 +1,5 @@
 import os
 import logging
-import threading
 from datetime import datetime
 from flask import Flask, request
 from telegram import (
@@ -24,7 +23,6 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv.onrender.com")
 ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
-# Flask server to handle webhook
 flask_app = Flask(__name__)
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -56,8 +54,6 @@ LANGUAGE_MAP = {
         "language_set": "✅ ቋንቋ ወደ አማርኛ ተቀይሯል።",
     }
 }
-
-# === Handlers ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
@@ -109,19 +105,53 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
-async def toggle_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
+async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if not user:
+        await update.message.reply_text("❌ You must start the bot first using /start.")
         return
 
-    user.language = toggle_language(user.language)
-    db.session.commit()
+    text = update.message.text.strip()
 
-    context.chat_data['language'] = user.language
-    lang = LANGUAGE_MAP[user.language]
-    await update.callback_query.edit_message_text(lang["language_set"])
+    if "deposit_method" in context.chat_data:
+        method = context.chat_data["deposit_method"]
+        if not is_valid_tx_id(text):
+            await update.message.reply_text("❌ Invalid transaction ID. Please try again.")
+            return
+
+        tx = Transaction(
+            user_id=user.id,
+            type="deposit",
+            amount=0,
+            method=method,
+            status="pending",
+            reference=text,
+            created_at=datetime.utcnow()
+        )
+        db.session.add(tx)
+        db.session.commit()
+        await update.message.reply_text("✅ Transaction received. Awaiting admin approval.")
+        return
+
+    try:
+        amount = int(text)
+        if amount <= 0 or amount > user.balance:
+            await update.message.reply_text("❌ Invalid amount or insufficient balance.")
+            return
+
+        tx = Transaction(
+            user_id=user.id,
+            type="withdrawal",
+            amount=amount,
+            status="pending",
+            created_at=datetime.utcnow()
+        )
+        db.session.add(tx)
+        db.session.commit()
+        await update.message.reply_text(f"✅ Withdrawal request for {amount} birr submitted.")
+    except ValueError:
+        await update.message.reply_text("❌ Please enter a valid number.")
 
 async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
@@ -147,36 +177,7 @@ async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }.get(method, "❌ Unknown method.")
     
     await update.callback_query.edit_message_text(msg)
-
-async def handle_transaction_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    method = context.chat_data.get("deposit_method", "unknown")
-    tx_id = update.message.text.strip()
-
-    if not user:
-        await update.message.reply_text("❌ You must start the bot first using /start.")
-        return
-
-    if not is_valid_tx_id(tx_id):
-        await update.message.reply_text("❌ Invalid transaction ID. Please try again.")
-        return
-
-    tx = Transaction(
-        user_id=user.id,
-        type="deposit",
-        amount=0,
-        method=method,
-        status="pending",
-        reference=tx_id,
-        created_at=datetime.utcnow()
-    )
-    db.session.add(tx)
-    db.session.commit()
-
-    logging.info(f"User {telegram_id} submitted deposit via {method}: {tx_id}")
-    await update.message.reply_text("✅ Transaction received. Awaiting admin approval.")
-
+    
 async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
@@ -190,7 +191,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text("❌ No stats found.")
         return
 
-        lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
+    lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
     link = referral_link(context.bot.username or "AradaBingoBot", user.id)
     text = lang["stats"].format(
         balance=user.balance,
@@ -232,7 +233,7 @@ async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔊 Sound: {status}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ℹ️ Use /start to begin. Tap buttons to deposit, play, or invite friends.")
+    await update.message.reply_text("ℹ️ Use /start to begin. Tap buttons to deposit, withdraw, play, or invite friends.")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
@@ -256,7 +257,7 @@ def main():
     telegram_app.add_handler(CallbackQueryHandler(invite, pattern="invite"))
     telegram_app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
 
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
     telegram_app.add_error_handler(error_handler)
 
     logging.info("✅ Arada Bingo Ethiopia bot is running via webhook...")
@@ -264,4 +265,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
