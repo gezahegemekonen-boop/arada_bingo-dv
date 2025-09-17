@@ -8,6 +8,10 @@ from config import (
 )
 from models import db, User, Game, Transaction
 
+from telegram import Bot
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+bot = Bot(token=BOT_TOKEN)
+
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
@@ -36,7 +40,7 @@ def login():
 def dashboard():
     players = User.query.all()
     games = Game.query.all()
-    pending_withdrawals = Transaction.query.filter_by(type="withdraw", status="pending").all()
+    pending_withdrawals = Transaction.query.filter_by(type="withdrawal", status="pending").all()
     pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
     return render_template(
         'admin/dashboard.html',
@@ -94,6 +98,7 @@ def approve_withdrawal():
         tx.completed_at = datetime.utcnow()
         db.session.commit()
         logging.info(f"✅ Admin approved withdrawal TX {tx_id} for user {user_id}")
+        bot.send_message(chat_id=user.telegram_id, text=f"✅ Your withdrawal of {amount} birr was approved.")
         flash('Withdrawal approved')
     else:
         flash('Insufficient balance')
@@ -113,6 +118,7 @@ def reject_withdrawal():
     tx.completed_at = datetime.utcnow()
     db.session.commit()
     logging.info(f"❌ Admin rejected withdrawal TX {tx_id} with reason: {reason}")
+    bot.send_message(chat_id=tx.user.telegram_id, text=f"❌ Your withdrawal request was rejected.\nReason: {reason}")
     flash('Withdrawal rejected')
     return redirect(url_for('dashboard'))
 
@@ -130,6 +136,7 @@ def approve_deposit():
     tx.completed_at = datetime.utcnow()
     db.session.commit()
     logging.info(f"✅ Admin approved deposit TX {tx_id} for user {user.id}")
+    bot.send_message(chat_id=user.telegram_id, text=f"✅ Your deposit of {tx.amount} birr was approved.")
     flash('Deposit approved')
     return redirect(url_for('dashboard'))
 
@@ -147,6 +154,7 @@ def reject_deposit():
     tx.completed_at = datetime.utcnow()
     db.session.commit()
     logging.info(f"❌ Admin rejected deposit TX {tx_id} with reason: {reason}")
+    bot.send_message(chat_id=tx.user.telegram_id, text=f"❌ Your deposit was rejected.\nReason: {reason}")
     flash('Deposit rejected')
     return redirect(url_for('dashboard'))
 
