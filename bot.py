@@ -16,11 +16,12 @@ from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.format_cartela import format_cartela
 from utils.build_main_keyboard import build_main_keyboard
+import requests
 
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv.onrender.com")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv-oxct.onrender.com")
 ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
 flask_app = Flask(__name__)
@@ -55,7 +56,6 @@ LANGUAGE_MAP = {
     }
 }
 
-# 🟢 Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     referral_id = None
@@ -106,7 +106,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
-# 🟢 Message handler
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -155,7 +154,6 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ Please enter a valid number.")
 
-# 🟢 Callback handlers
 async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     keyboard = [
@@ -192,7 +190,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if not user:
         await update.callback_query.edit_message_text("❌ No stats found.")
-
         return
 
     lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
@@ -245,6 +242,12 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
 
 def main():
+    # ✅ Automatically set webhook on startup
+    requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
+        data={"url": f"{WEBAPP_URL}/webhook"}
+    )
+
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
     telegram_app.add_handler(CommandHandler("auto", toggle_auto_mode))
