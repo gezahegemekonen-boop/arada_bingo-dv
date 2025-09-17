@@ -190,8 +190,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.callback_query.edit_message_text(text)
 
-
-    async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -260,4 +259,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-             
