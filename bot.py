@@ -268,6 +268,10 @@ def main():
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
     telegram_app.add_error_handler(error_handler)
 
+    # ✅ Start Telegram bot event loop
+    telegram_app.initialize()
+    telegram_app.start()
+
     logging.info("✅ Arada Bingo Ethiopia bot is running via webhook...")
     flask_app.run(host="0.0.0.0", port=10000)
 
