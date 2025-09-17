@@ -2,7 +2,7 @@ import os
 import logging
 import threading
 from datetime import datetime
-from flask import Flask
+from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 )
@@ -21,20 +21,22 @@ from utils.build_main_keyboard import build_main_keyboard
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://your-hosted-webapp.com")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv.onrender.com")
 ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
-# Dummy Flask server to satisfy Render's port scan
+# Flask server to handle webhook
 flask_app = Flask(__name__)
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 @flask_app.route('/')
 def home():
-    return "Arada Bingo Bot is running."
+    return "Arada Bingo Bot is running via webhook."
 
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=10000)
-
-threading.Thread(target=run_flask).start()
+@flask_app.route('/webhook', methods=["POST"])
+def telegram_webhook():
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    telegram_app.update_queue.put(update)
+    return "OK"
 
 LANGUAGE_MAP = {
     "en": {
@@ -54,6 +56,8 @@ LANGUAGE_MAP = {
         "language_set": "✅ ቋንቋ ወደ አማርኛ ተቀይሯል።",
     }
 }
+
+# === Handlers ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
@@ -236,34 +240,27 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
 
 def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("play", play_game))
+    telegram_app.add_handler(CommandHandler("auto", toggle_auto_mode))
+    telegram_app.add_handler(CommandHandler("sound", toggle_sound))
+    telegram_app.add_handler(CommandHandler("help", help_command))
+    telegram_app.add_handler(CommandHandler("stats", stats))
+    telegram_app.add_handler(CommandHandler("invite", invite))
+    telegram_app.add_handler(CommandHandler("lang", toggle_language))
 
-    # Command handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("play", play_game))
-    app.add_handler(CommandHandler("auto", toggle_auto_mode))
-    app.add_handler(CommandHandler("sound", toggle_sound))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("invite", invite))
-    app.add_handler(CommandHandler("lang", toggle_language))
+    telegram_app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
+    telegram_app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
+    telegram_app.add_handler(CallbackQueryHandler(withdraw, pattern="withdraw"))
+    telegram_app.add_handler(CallbackQueryHandler(stats, pattern="stats"))
+    telegram_app.add_handler(CallbackQueryHandler(invite, pattern="invite"))
+    telegram_app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
 
-    # Callback handlers
-    app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
-    app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
-    app.add_handler(CallbackQueryHandler(withdraw, pattern="withdraw"))
-    app.add_handler(CallbackQueryHandler(stats, pattern="stats"))
-    app.add_handler(CallbackQueryHandler(invite, pattern="invite"))
-    app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
+    telegram_app.add_error_handler(error_handler)
 
-    # Message handler for transaction ID
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_transaction_id))
-
-    # Global error handler
-    app.add_error_handler(error_handler)
-
-    logging.info("✅ Arada Bingo Ethiopia bot is running...")
-    app.run_polling()
+    logging.info("✅ Arada Bingo Ethiopia bot is running via webhook...")
+    flask_app.run(host="0.0.0.0", port=10000)
 
 if __name__ == "__main__":
     main()
