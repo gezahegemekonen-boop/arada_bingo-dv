@@ -1,6 +1,6 @@
 import requests
 
-BOT_TOKEN = "your-real-bot-token-here"
+BOT_TOKEN = "7247278760:AAHh1XCjoEoQ0oLpt7yUIOruQ2biMHCd5so"
 WEBHOOK_URL = "https://arada-bingo-dv-oxct.onrender.com/webhook"
 
 response = requests.post(
