@@ -243,10 +243,11 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # ✅ Automatically set webhook on startup
-    requests.post(
+    response = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
         data={"url": f"{WEBAPP_URL}/webhook"}
     )
+    logging.info(f"Webhook setup response: {response.json()}")
 
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
