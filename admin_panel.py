@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from functools import wraps
 from datetime import datetime
 import logging
+import os
 from config import (
     ADMIN_USERNAME, ADMIN_PASSWORD, SECRET_KEY,
     FLASK_HOST, FLASK_PORT
@@ -80,6 +81,12 @@ def finish_game():
     else:
         flash('Game not active or not found')
     return redirect(url_for('dashboard'))
+
+@app.route('/admin/leaderboard')
+@admin_required
+def leaderboard():
+    top_players = User.query.order_by(User.games_won.desc()).limit(10).all()
+    return render_template('admin/leaderboard.html', players=top_players)
 
 @app.route('/admin/withdrawal/approve', methods=['POST'])
 @admin_required
