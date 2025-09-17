@@ -55,6 +55,7 @@ LANGUAGE_MAP = {
     }
 }
 
+# 🟢 Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     referral_id = None
@@ -105,6 +106,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
+# 🟢 Message handler
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -153,6 +155,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ Please enter a valid number.")
 
+# 🟢 Callback handlers
 async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     keyboard = [
@@ -177,7 +180,7 @@ async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }.get(method, "❌ Unknown method.")
     
     await update.callback_query.edit_message_text(msg)
-    
+
 async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
@@ -189,6 +192,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if not user:
         await update.callback_query.edit_message_text("❌ No stats found.")
+
         return
 
     lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
