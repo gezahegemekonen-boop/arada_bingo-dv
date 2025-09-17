@@ -41,12 +41,14 @@ def login():
 def dashboard():
     players = User.query.all()
     games = Game.query.all()
+    active_game = Game.query.filter_by(status="active").first()
     pending_withdrawals = Transaction.query.filter_by(type="withdrawal", status="pending").all()
     pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
     return render_template(
         'admin/dashboard.html',
         players=players,
         games=games,
+        active_game=active_game,
         pending_withdrawals=pending_withdrawals,
         pending_deposits=pending_deposits,
         active_games=Game.query.filter_by(status="active").count(),
@@ -87,6 +89,28 @@ def finish_game():
 def leaderboard():
     top_players = User.query.order_by(User.games_won.desc()).limit(10).all()
     return render_template('admin/leaderboard.html', players=top_players)
+
+@app.route('/admin/call_number', methods=['POST'])
+@admin_required
+def call_number():
+    game_id = int(request.form.get('game_id'))
+    number = int(request.form.get('number'))
+    game = Game.query.get(game_id)
+    if not game or game.status != "active":
+        flash("Game not active or not found")
+        return redirect(url_for("dashboard"))
+
+    if number in game.called_numbers:
+        flash(f"Number {number} already called")
+        return redirect(url_for("dashboard"))
+
+    game.called_numbers.append(number)
+    db.session.commit()
+
+    logging.info(f"📢 Called number {number} in game {game_id}")
+    flash(f"📢 Called number {number}")
+
+    return redirect(url_for("dashboard"))
 
 @app.route('/admin/withdrawal/approve', methods=['POST'])
 @admin_required
