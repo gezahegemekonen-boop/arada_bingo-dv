@@ -167,6 +167,11 @@ async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.callback_query.edit_message_text(msg)
 
+async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
+    await update.callback_query.edit_message_text(lang["withdraw"])
+
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     telegram_id = str(update.effective_user.id)
@@ -185,7 +190,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.callback_query.edit_message_text(text)
 
-async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     telegram_id = str(update.effective_user.id)
     user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -254,3 +260,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+             
