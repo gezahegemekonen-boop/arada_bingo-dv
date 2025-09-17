@@ -1,7 +1,6 @@
 import os
 import logging
 from datetime import datetime
-from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 )
@@ -24,18 +23,7 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv-oxct.onrender.com")
 ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
-flask_app = Flask(__name__)
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-@flask_app.route('/')
-def home():
-    return "Arada Bingo Bot is running via webhook."
-
-@flask_app.route('/webhook', methods=["POST"])
-def telegram_webhook():
-    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
-    telegram_app.update_queue.put(update)
-    return "OK"
 
 LANGUAGE_MAP = {
     "en": {
@@ -179,11 +167,6 @@ async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.callback_query.edit_message_text(msg)
 
-async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
-    await update.callback_query.edit_message_text(lang["withdraw"])
-
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     telegram_id = str(update.effective_user.id)
@@ -242,13 +225,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
 
 def main():
-    # ✅ Automatically set webhook on startup
-    response = requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
-        data={"url": f"{WEBAPP_URL}/webhook"}
-    )
-    logging.info(f"Webhook setup response: {response.json()}")
-
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
     telegram_app.add_handler(CommandHandler("auto", toggle_auto_mode))
@@ -268,12 +244,13 @@ def main():
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
     telegram_app.add_error_handler(error_handler)
 
-    # ✅ Start Telegram bot event loop
-    telegram_app.initialize()
-    telegram_app.start()
-
     logging.info("✅ Arada Bingo Ethiopia bot is running via webhook...")
-    flask_app.run(host="0.0.0.0", port=10000)
+
+    telegram_app.run_webhook(
+        listen="0.0.0.0",
+        port=10000,
+        webhook_url=f"{WEBAPP_URL}/webhook"
+    )
 
 if __name__ == "__main__":
     main()
