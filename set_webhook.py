@@ -1,10 +1,9 @@
 import requests
+import os
 
-# Your bot token from BotFather
-BOT_TOKEN = "7247278760:AAHh1XCjoEoQ0oLpt7yUIOruQ2biMHCd5so"
-
-# Your deployed Render URL with /webhook path
-WEBHOOK_URL = "https://arada-bingo-dv-oxct.onrender.com/webhook"
+# Load bot token and webhook URL from environment variables
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv-oxct.onrender.com/webhook")
 
 # Set the webhook
 response = requests.post(
