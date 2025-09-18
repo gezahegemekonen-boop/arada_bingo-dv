@@ -1,15 +1,22 @@
 from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from models import db, User, Game, GameParticipant, Transaction
+from database import db, init_db
+from models import User, Game, GameParticipant, Transaction
 from game_logic import BingoGame
 from datetime import datetime
 import os
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET", "arada_secret_key")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///arada.db")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-db.init_app(app)
+
+# Initialize database
+try:
+    init_db(app)
+except RuntimeError as e:
+    print(f"Database setup error: {e}")
+    # Fallback to SQLite for development
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///arada.db"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(app)
 
 # In-memory game store
 active_games = {}
