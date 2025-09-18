@@ -45,6 +45,7 @@ LANGUAGE_MAP = {
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logging.info("✅ /start command received")
     args = context.args
     referral_id = None
     if args:
@@ -229,6 +230,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(update, Update) and update.message:
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
 
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logging.info(f"📩 Received message: {update.message.text}")
+    await update.message.reply_text("✅ Bot is alive and received your message.")
+
 def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
@@ -246,7 +251,8 @@ def main():
     telegram_app.add_handler(CallbackQueryHandler(invite, pattern="invite"))
     telegram_app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
 
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
+    telegram_app.add_handler(MessageHandler(filters.TEXT, handle_user_input))
+    telegram_app.add_handler(MessageHandler(filters.TEXT, echo))
     telegram_app.add_error_handler(error_handler)
 
     logging.info("✅ Arada Bingo Ethiopia bot is running via webhook...")
