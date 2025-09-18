@@ -231,7 +231,7 @@ class BingoGame:
             self.auto_call_timer.cancel()
         logging.info(f"Game {self.game_id} reset.")
 
-        def summary(self) -> Dict[str, Any]:
+    def summary(self) -> Dict[str, Any]:
         return {
             "game_id": self.game_id,
             "status": self.status,
