@@ -188,13 +188,15 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
             link = referral_link(context.bot.username or "AradaBingoBot", user.id)
-            text = lang["stats"].format(
-                balance=user.balance,
-                played=user.games_played,
-                won=user.games_won,
-                link=link
-            )
-            await update.callback_query.edit_message_text(text)
+text = lang["stats"].format(
+    balance=user.balance,
+    played=user.games_played,
+    won=user.games_won,
+    link=link
+)
+await update.callback_query.edit_message_text(text)
+
+# -------------------- INVITE & GAME LAUNCH --------------------
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query and update.effective_user:
@@ -210,8 +212,6 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             link = referral_link(context.bot.username or "AradaBingoBot", user.id)
             await update.callback_query.edit_message_text(lang["invite"].format(link=link))
 
-# -------------------- GAME LAUNCH & TOGGLES --------------------
-
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(
@@ -220,6 +220,8 @@ async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))]
             ])
         )
+
+# -------------------- TOGGLE SETTINGS --------------------
 
 async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
@@ -319,7 +321,12 @@ def main():
     telegram_app.add_error_handler(error_handler)
 
     logging.info("✅ Arada Bingo Ethiopia bot is running via polling...")
+
+    # ✅ Fix: Push Flask context globally
+    flask_app.app_context().push()
+
     telegram_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
+
