@@ -1,52 +1,39 @@
 # bot.py (Part 1)
 import os
 import logging
-from datetime import datetime
+import asyncio
 from flask import Flask
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    filters, ContextTypes
+    ContextTypes, filters
 )
 from database import db, init_db
-from models import User, Transaction, Game, GameParticipant
+from models import User, Transaction
 from utils.is_valid_tx_id import is_valid_tx_id
 from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
-from utils.format_cartela import format_cartela
 from utils.build_main_keyboard import build_main_keyboard
-import requests
 
-# 🔧 Logging setup
 logging.basicConfig(level=logging.INFO)
 
-# 🔐 Environment variables
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://127.0.0.1:5000")
-ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
-if not BOT_TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN is missing in environment")
-
-# 🌐 Flask app for DB context
 flask_app = Flask(__name__)
 flask_app.secret_key = os.getenv("FLASK_SECRET", "bot_secret")
 
 try:
     init_db(flask_app)
-    print("✅ Database initialized successfully")
-except RuntimeError as e:
-    print(f"⚠️ Database setup error: {e}")
+except RuntimeError:
     flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///arada.db"
     flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(flask_app)
 
-# 🤖 Telegram bot app
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# 🌍 Language map
 LANGUAGE_MAP = {
     "en": {
         "welcome": "Welcome to Arada Bingo Ethiopia!",
@@ -66,27 +53,17 @@ LANGUAGE_MAP = {
     }
 }
 
-# -------------------- COMMAND HANDLERS --------------------
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
 
-    logging.info("✅ /start command received")
     args = context.args
-    referral_id = None
-    if args:
-        try:
-            referral_id = int(args[0])
-        except ValueError:
-            pass
-
+    referral_id = int(args[0]) if args and args[0].isdigit() else None
     telegram_id = update.effective_user.id
     username = update.effective_user.username
 
     with flask_app.app_context():
         user = User.query.filter_by(telegram_id=str(telegram_id)).first()
-
         if not user:
             user = User(
                 telegram_id=str(telegram_id),
@@ -112,30 +89,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         user_language = user.language
 
-    context.chat_data.setdefault("auto_mode", True)
-    context.chat_data.setdefault("sound_enabled", True)
     context.chat_data["language"] = user_language
-
     lang = LANGUAGE_MAP.get(user_language, LANGUAGE_MAP["en"])
     keyboard = build_main_keyboard(lang, WEBAPP_URL)
 
-    await update.message.reply_text(
-        lang["welcome"],
-        reply_markup=keyboard
-    )
+    await update.message.reply_text(lang["welcome"], reply_markup=keyboard)
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        await update.message.reply_text(
-            "ℹ️ Use /start to begin. Tap buttons to deposit, withdraw, play, or invite friends."
-        )
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query and update.effective_user:
+        await update.callback_query.answer()
+        telegram_id = str(update.effective_user.id)
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        logging.info(f"📩 Received message: {update.message.text}")
-        await update.message.reply_text("✅ Bot received your message.")
+        with flask_app.app_context():
+            user = User.query.filter_by(telegram_id=telegram_id).first()
+            if not user:
+                await update.callback_query.edit_message_text("❌ No stats found.")
+                return
 
-# -------------------- DEPOSIT FLOW --------------------
+            lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
+            link = referral_link(context.bot.username or "AradaBingoBot", user.id)
+            text = lang["stats"].format(
+                balance=user.balance,
+                played=user.games_played,
+                won=user.games_won,
+                link=link
+            )
+            await update.callback_query.edit_message_text(text)
+
+async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.answer()
+        lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
+        await update.callback_query.edit_message_text(lang["withdraw"])
 
 async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
@@ -164,37 +149,7 @@ async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.callback_query.edit_message_text(msg)
 
-# -------------------- WITHDRAW & STATS --------------------
-
-async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        lang = LANGUAGE_MAP.get(
-            context.chat_data.get("language", "en") if context.chat_data else "en",
-            LANGUAGE_MAP["en"]
-        )
-        await update.callback_query.edit_message_text(lang["withdraw"])
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query and update.effective_user:
-        await update.callback_query.answer()
-        telegram_id = str(update.effective_user.id)
-
-        with flask_app.app_context():
-            user = User.query.filter_by(telegram_id=telegram_id).first()
-            if not user:
-                await update.callback_query.edit_message_text("❌ No stats found.")
-                return
-
-            lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-            link = referral_link(context.bot.username or "AradaBingoBot", user.id)
-            text = lang["stats"].format(
-                balance=user.balance,
-                played=user.games_played,
-                won=user.games_won,
-                link=link
-            )
-            await update.callback_query.edit_message_text(text)
+# bot.py (Part 2)
 
 # -------------------- INVITE & GAME LAUNCH --------------------
 
@@ -244,7 +199,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     telegram_id = str(update.effective_user.id)
-    text = update.message.text.strip() if update.message.text else ""
+    text = update.message.text.strip()
 
     with flask_app.app_context():
         user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -300,12 +255,12 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 # -------------------- BOT ENTRY POINT --------------------
 
-def main():
+async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
     telegram_app.add_handler(CommandHandler("auto", toggle_auto_mode))
     telegram_app.add_handler(CommandHandler("sound", toggle_sound))
-    telegram_app.add_handler(CommandHandler("help", help_command))
+    telegram_app.add_handler(CommandHandler("help", start))  # reuse start as help
     telegram_app.add_handler(CommandHandler("stats", stats))
     telegram_app.add_handler(CommandHandler("invite", invite))
     telegram_app.add_handler(CommandHandler("lang", toggle_language))
@@ -322,11 +277,15 @@ def main():
 
     logging.info("✅ Arada Bingo Ethiopia bot is running via polling...")
 
-    # ✅ This line fixes the SQLAlchemy context error
+    # 🧼 Clear webhook to avoid polling conflict
+    await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+
+    # 🔐 Push Flask context globally
     flask_app.app_context().push()
 
-    telegram_app.run_polling(drop_pending_updates=True)
+    # 🚀 Start polling
+    await telegram_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 
