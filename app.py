@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, request, jsonify
 from database import db, init_db
 from models import User, Game, GameParticipant, Transaction
@@ -5,21 +6,24 @@ from game_logic import BingoGame
 from datetime import datetime
 import os
 
+# 🔧 Flask App Setup
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET", "arada_secret_key")
 
-# Initialize database
+# 🧠 Database Initialization
 try:
     init_db(app)
 except RuntimeError as e:
-    print(f"Database setup error: {e}")
-    # Fallback to SQLite for development
+    print(f"❌ Database setup error: {e}")
+    # Fallback to SQLite for local development
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///arada.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
 
-# In-memory game store
+# 🎮 In-memory game store
 active_games = {}
+
+# -------------------- GAME ROUTES --------------------
 
 @app.route("/game/create", methods=["POST"])
 def create_game():
@@ -74,6 +78,8 @@ def mark_number():
         "win": win,
         "message": message
     })
+
+# -------------------- DEPOSIT & WITHDRAW --------------------
 
 @app.route("/deposit", methods=["POST"])
 def deposit():
@@ -133,6 +139,8 @@ def withdraw():
 
     return jsonify({"message": "Withdrawal request submitted."})
 
+# -------------------- ADMIN ROUTES --------------------
+
 @app.route("/admin/transactions", methods=["GET"])
 def admin_transactions():
     txs = Transaction.query.order_by(Transaction.created_at.desc()).limit(50).all()
@@ -179,6 +187,8 @@ def reject_transaction(tx_id):
     db.session.commit()
     return jsonify({"message": "Transaction rejected."})
 
+# -------------------- LEADERBOARD --------------------
+
 @app.route("/leaderboard", methods=["GET"])
 def leaderboard():
     top_users = User.query.order_by(User.games_won.desc(), User.balance.desc()).limit(10).all()
@@ -192,7 +202,9 @@ def leaderboard():
     ]
     return jsonify(data)
 
+# -------------------- START SERVER --------------------
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("FLASK_PORT", 5000)), debug=True)
