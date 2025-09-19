@@ -1,3 +1,4 @@
+# game_logic.py
 import random
 import threading
 import logging
@@ -15,15 +16,19 @@ class BingoGame:
         self.winner_id = None
         self.created_at = datetime.utcnow()
         self.finished_at = None
+
         self.min_players = 1
         self.max_players = 100
+        self.call_interval = 3.5
         self.last_call_time = None
         self.auto_call_timer = None
-        self.call_interval = 3.5
+
+        self.player_modes: Dict[int, str] = {}       # "auto" or "manual"
+        self.sound_enabled: Dict[int, bool] = {}     # True or False
         self.leaderboard: Dict[int, Dict[str, int]] = {}
-        self.player_modes: Dict[int, str] = {}  # "auto" or "manual"
-        self.sound_enabled: Dict[int, bool] = {}  # True or False
         self.admin_earnings = 0
+
+    # -------------------- BOARD GENERATION --------------------
 
     def generate_board(self, cartela_number: int) -> List[int]:
         random.seed(cartela_number)
@@ -33,10 +38,13 @@ class BingoGame:
         g = random.sample(range(46, 61), 5)
         o = random.sample(range(61, 76), 5)
         random.seed()
+
         board = []
         for row in range(5):
             board.extend([b[row], i[row], n[row], g[row], o[row]])
         return board
+
+    # -------------------- PLAYER MANAGEMENT --------------------
 
     def add_player(self, user_id: int, cartela_number: Optional[int] = None, mode: str = "auto") -> List[int]:
         if user_id not in self.players:
@@ -47,18 +55,15 @@ class BingoGame:
 
         used_cartelas = {b['cartela_number'] for boards in self.players.values() for b in boards}
         available = [n for n in range(1, 101) if n not in used_cartelas]
-        if not available:
-            logging.warning("No available cartela numbers left.")
-            cartela_number = 0
-        else:
-            cartela_number = cartela_number or random.choice(available)
+        cartela_number = cartela_number or (random.choice(available) if available else 0)
 
         board = self.generate_board(cartela_number)
         self.players[user_id].append({
             'board': board,
-            'marked': [board[12]],
+            'marked': [board[12]],  # Free space
             'cartela_number': cartela_number
         })
+
         self.pool += self.entry_price
         self.player_modes[user_id] = mode
         self.sound_enabled[user_id] = True
@@ -71,6 +76,14 @@ class BingoGame:
     def total_players(self) -> int:
         return sum(len(boards) for boards in self.players.values())
 
+    def toggle_sound(self, user_id: int, enabled: bool):
+        self.sound_enabled[user_id] = enabled
+
+    def toggle_mode(self, user_id: int, mode: str):
+        self.player_modes[user_id] = mode
+
+    # -------------------- GAME FLOW --------------------
+
     def start_game(self) -> bool:
         if self.status != "waiting":
             return False
@@ -80,9 +93,7 @@ class BingoGame:
         return True
 
     def schedule_next_call(self):
-        if self.status != "active":
-            return
-        if "auto" in self.player_modes.values():
+        if self.status == "active" and "auto" in self.player_modes.values():
             self.auto_call_timer = threading.Timer(self.call_interval, self.auto_call)
             self.auto_call_timer.start()
 
@@ -115,23 +126,7 @@ class BingoGame:
         self.last_call_time = datetime.utcnow()
         return True
 
-    @staticmethod
-    def format_number(number: int) -> str:
-        if 1 <= number <= 15: return f"B-{number}"
-        elif 16 <= number <= 30: return f"I-{number}"
-        elif 31 <= number <= 45: return f"N-{number}"
-        elif 46 <= number <= 60: return f"G-{number}"
-        else: return f"O-{number}"
-
-    @staticmethod
-    def audio_filename(number: int) -> str:
-        return f"{BingoGame.format_number(number)}.mp3"
-
-    def toggle_sound(self, user_id: int, enabled: bool):
-        self.sound_enabled[user_id] = enabled
-
-    def toggle_mode(self, user_id: int, mode: str):
-        self.player_modes[user_id] = mode
+    # -------------------- MARKING & WINNING --------------------
 
     def mark_number(self, user_id: int, number: int) -> bool:
         if user_id not in self.players:
@@ -191,6 +186,20 @@ class BingoGame:
         self.leaderboard[winner_id]["wins"] += 1
         self.leaderboard[winner_id]["earnings"] += payout
 
+    # -------------------- UTILITIES --------------------
+
+    @staticmethod
+    def format_number(number: int) -> str:
+        if 1 <= number <= 15: return f"B-{number}"
+        elif 16 <= number <= 30: return f"I-{number}"
+        elif 31 <= number <= 45: return f"N-{number}"
+        elif 46 <= number <= 60: return f"G-{number}"
+        else: return f"O-{number}"
+
+    @staticmethod
+    def audio_filename(number: int) -> str:
+        return f"{BingoGame.format_number(number)}.mp3"
+
     def get_leaderboard(self, top_n: int = 10) -> List[Tuple[int, int, int]]:
         sorted_lb = sorted(
             self.leaderboard.items(),
@@ -221,15 +230,17 @@ class BingoGame:
     def is_ready(self) -> bool:
         return self.status == "waiting" and self.total_players() >= self.min_players
 
-    def reset_game(self):
+        def reset_game(self):
         self.status = "waiting"
         self.called_numbers.clear()
         self.winner_id = None
         self.finished_at = None
         self.last_call_time = None
+        self.admin_earnings = 0
         if self.auto_call_timer:
             self.auto_call_timer.cancel()
-        logging.info(f"Game {self.game_id} reset.")
+            self.auto_call_timer = None
+        logging.info(f"🔄 Game {self.game_id} has been reset.")
 
     def summary(self) -> Dict[str, Any]:
         return {
@@ -239,7 +250,7 @@ class BingoGame:
             "pool": self.pool,
             "called": len(self.called_numbers),
             "winner": self.winner_id,
-            "created_at": self.created_at,
-            "finished_at": self.finished_at,
+            "created_at": self.created_at.isoformat(),
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "admin_earnings": self.admin_earnings
         }
