@@ -188,13 +188,13 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
             link = referral_link(context.bot.username or "AradaBingoBot", user.id)
-text = lang["stats"].format(
-    balance=user.balance,
-    played=user.games_played,
-    won=user.games_won,
-    link=link
-)
-await update.callback_query.edit_message_text(text)
+            text = lang["stats"].format(
+                balance=user.balance,
+                played=user.games_played,
+                won=user.games_won,
+                link=link
+            )
+            await update.callback_query.edit_message_text(text)
 
 # -------------------- INVITE & GAME LAUNCH --------------------
 
