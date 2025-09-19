@@ -322,7 +322,7 @@ def main():
 
     logging.info("✅ Arada Bingo Ethiopia bot is running via polling...")
 
-    # ✅ Fix: Push Flask context globally
+    # ✅ This line fixes the SQLAlchemy context error
     flask_app.app_context().push()
 
     telegram_app.run_polling(drop_pending_updates=True)
