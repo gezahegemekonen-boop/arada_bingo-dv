@@ -69,7 +69,13 @@ def login_via_telegram():
 
 @admin_bp.before_request
 def require_admin_login():
-    protected_paths = ["/admin/dashboard", "/approve_withdrawal", "/start_game", "/admin/leaderboard"]
+    protected_paths = [
+        "/admin/dashboard",
+        "/approve_withdrawal",
+        "/start_game",
+        "/admin/leaderboard",
+        "/admin/referrals"
+    ]
     if request.path.startswith(tuple(protected_paths)):
         if "admin_id" not in session:
             return "🔒 You must be logged in as admin", 403
@@ -83,15 +89,37 @@ def leaderboard():
     richest = User.query.order_by(User.balance.desc()).limit(10).all()
     return render_template("leaderboard.html", top_winners=top_winners, most_active=most_active, richest=richest)
 
+# -------------------- REFERRAL LEADERBOARD --------------------
+
+@admin_bp.route("/admin/referrals")
+def referral_leaderboard():
+    top_referrers = (
+        User.query
+        .filter(User.referrals.any())
+        .order_by(db.func.count(User.referrals).desc())
+        .limit(10)
+        .all()
+    )
+
+    referral_data = []
+    for user in top_referrers:
+        invited = [u.username for u in user.referrals]
+        referral_data.append({
+            "username": user.username,
+            "count": len(invited),
+            "bonus": len(invited) * 5,
+            "invited": invited
+        })
+
+    return render_template("referral_leaderboard.html", referral_data=referral_data)
+
 # -------------------- ONE-TIME ADMIN SETUP --------------------
 
 @admin_bp.route("/make_me_admin")
 def make_me_admin():
-    with db.engine.connect() as conn:
-        with db.session.begin():
-            user = User.query.filter_by(telegram_id="364344971").first()
-            if user:
-                user.is_admin = True
-                db.session.commit()
-                return "✅ You are now marked as admin."
-            return "❌ User not found."
+    user = User.query.filter_by(telegram_id="364344971").first()
+    if user:
+        user.is_admin = True
+        db.session.commit()
+        return "✅ You are now marked as admin."
+    return "❌ User not found."
