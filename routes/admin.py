@@ -82,3 +82,16 @@ def leaderboard():
     most_active = User.query.order_by(User.games_played.desc()).limit(10).all()
     richest = User.query.order_by(User.balance.desc()).limit(10).all()
     return render_template("leaderboard.html", top_winners=top_winners, most_active=most_active, richest=richest)
+
+# -------------------- ONE-TIME ADMIN SETUP --------------------
+
+@admin_bp.route("/make_me_admin")
+def make_me_admin():
+    with db.engine.connect() as conn:
+        with db.session.begin():
+            user = User.query.filter_by(telegram_id="364344971").first()
+            if user:
+                user.is_admin = True
+                db.session.commit()
+                return "✅ You are now marked as admin."
+            return "❌ User not found."
