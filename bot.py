@@ -107,13 +107,146 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(lang["welcome"], reply_markup=keyboard)
 
-# Other handlers: stats, invite, preview, edit_cartela, join_lobby, start_jackpot, replay
-# Already included in your version — no changes needed
+async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await update.message.reply_text(
+            "🎮 Launching Arada Bingo Ethiopia...",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))]
+            ])
+        )
 
+async def preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    with flask_app.app_context():
+        user = User.query.filter_by(telegram_id=telegram_id).first()
+        cartela = user.cartela or [12, 34, 56, 78, 90]
+        await update.message.reply_text(f"🎨 Your cartela:\n{cartela}")
+
+async def edit_cartela(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    text = update.message.text.strip()
+    try:
+        numbers = [int(n) for n in text.split(",") if 1 <= int(n) <= 90]
+        if len(numbers) != 5:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ Please enter 5 numbers between 1 and 90, separated by commas.")
+        return
+
+    with flask_app.app_context():
+        user = User.query.filter_by(telegram_id=telegram_id).first()
+        user.cartela = numbers
+        db.session.add(user)
+        db.session.commit()
+        await update.message.reply_text(f"✅ Cartela updated: {numbers}")
+
+async def join_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    with flask_app.app_context():
+        user = User.query.filter_by(telegram_id=telegram_id).first()
+        lobby = Lobby.query.filter_by(status="waiting").first()
+        if not lobby:
+            lobby = Lobby(status="waiting", jackpot=0)
+            db.session.add(lobby)
+            db.session.commit()
+
+        lobby.players.append(user)
+        db.session.add(lobby)
+        db.session.commit()
+        await update.message.reply_text(f"🧩 Joined lobby #{lobby.id}. Waiting for others...")
+
+async def start_jackpot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    with flask_app.app_context():
+        lobby = Lobby.query.filter(Lobby.players.any(telegram_id=str(telegram_id)), Lobby.status=="waiting").first()
+        if not lobby or len(lobby.players) < 2:
+            await update.message.reply_text("❌ Need at least 2 players to start jackpot round.")
+            return
+
+        lobby.status = "active"
+        lobby.jackpot = len(lobby.players) * 10
+        db.session.add(lobby)
+        db.session.commit()
+
+        for player in lobby.players:
+            await context.bot.send_message(chat_id=int(player.telegram_id), text=f"🎰 Jackpot Round Started!\nJackpot: {lobby.jackpot} birr")
+
+        await update.message.reply_text(f"✅ Jackpot round started with {len(lobby.players)} players.")
+
+async def replay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    with flask_app.app_context():
+        user = User.query.filter_by(telegram_id=telegram_id).first()
+        last_game = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).first()
+        if not last_game:
+            await update.message.reply_text("📭 No games played yet.")
+            return
+
+        result = "🎉 You won!" if last_game.winner_id == user.id else "😢 You lost."
+        sound = "🔊 Sound: ON" if context.chat_data.get("sound_enabled", True) else "🔇 Sound: OFF"
+        await update.message.reply_text(f"🕹️ Last Game #{last_game.id}\n{result}\n{sound}")
+
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        with flask_app.app_context():
+            top_winners = User.query.order_by(User.games_won.desc()).limit(5).all()
+            most_active = User.query.order_by(User.games_played.desc()).limit(5).all()
+            richest = User.query.order_by(User.balance.desc()).limit(5).all()
+
+            lines = ["🏆 Top Winners:"]
+            for u in top_winners:
+                lines.append(f"@{u.username} – {u.games_won} wins")
+
+            lines.append("\n🎯 Most Active:")
+            for u in most_active:
+                lines.append(f"@{u.username} – {u.games_played} games")
+
+            lines.append("\n💰 Richest Players:")
+            for u in richest:
+                lines.append(f"@{u.username} – {u.balance} birr")
+
+            await update.message.reply_text("\n".join(lines))
+
+async def referral_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        with flask_app.app_context():
+            users = User.query.all()
+            leaderboard = []
+
+            for u in users:
+                active_refs = [r for r in u.referred_users if r.games_played > 0]
+                bonus = sum(tx.amount for tx in u.transactions if tx.type in ["referral_bonus", "referral_milestone"])
+                if active_refs:
+                    leaderboard.append((u.username, len(active_refs), bonus))
+
+            leaderboard.sort(key=lambda x: x[1], reverse=True)
+            lines = ["📈 Referral Leaderboard:"]
+            for name, count, bonus in leaderboard[:10]:
+                lines.append(f"@{name} – {count} active referrals, {bonus} birr earned")
+
+            await update.message.reply_text("\n".join(lines))
+
+async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        telegram_id = str(update.effective_user.id)
+        with flask_app.app_context():
+            user = User.query.filter_by(telegram_id=telegram_id).first()
+            games = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).limit(5).all()
+            if not games:
+                await update.message.reply_text("📭 No games played yet.")
+                return
+
+            lines = ["🕹️ Recent Games:"]
+            for g in games:
+                status = g.status
+                payout = g.payout
+                lines.append(f"Game #{g.id} – {status} – Payout: {payout} birr")
+
+            await update.message.reply_text("\n".join(lines))
 async def remindme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text("📅 Reminder set! We'll notify you before the next game starts.")
-        # You can later integrate real scheduling via APScheduler or Celery
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
@@ -137,6 +270,18 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text("✅ Broadcast sent to all users.")
 
+async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current = context.chat_data.get("auto_mode", False)
+    context.chat_data["auto_mode"] = not current
+    status = "ON" if not current else "OFF"
+    await update.message.reply_text(f"🔁 Auto Mode is now {status}.")
+
+async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current = context.chat_data.get("sound_enabled", True)
+    context.chat_data["sound_enabled"] = not current
+    status = "🔊 Sound ON" if not current else "🔇 Sound OFF"
+    await update.message.reply_text(f"{status}")
+
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
@@ -150,13 +295,11 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ You must start the bot first using /start.")
             return
 
-        # Cartela editing
         if text.startswith("edit:"):
             context.args = text.replace("edit:", "").strip()
             await edit_cartela(update, context)
             return
 
-        # Deposit flow
         if context.chat_data and "deposit_method" in context.chat_data:
             method = context.chat_data["deposit_method"]
             if not is_valid_tx_id(text):
@@ -176,7 +319,6 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Transaction received. Awaiting admin approval.")
             return
 
-        # Withdrawal flow
         try:
             amount = int(text)
             if amount <= 0 or amount > user.balance:
@@ -240,3 +382,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
