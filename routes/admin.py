@@ -8,7 +8,8 @@ import asyncio
 admin_bp = Blueprint("admin", __name__)
 bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
 
-# ✅ Admin dashboard
+# -------------------- DASHBOARD --------------------
+
 @admin_bp.route("/admin/dashboard")
 def admin_dashboard():
     pending_withdrawals = Transaction.query.filter_by(type="withdraw", status="pending").all()
@@ -16,7 +17,8 @@ def admin_dashboard():
     players = User.query.order_by(User.created_at.desc()).limit(10).all()
     return render_template("admin_dashboard.html", pending_withdrawals=pending_withdrawals, games=games, players=players)
 
-# ✅ Approve withdrawal
+# -------------------- WITHDRAWAL APPROVAL --------------------
+
 @admin_bp.route("/approve_withdrawal", methods=["POST"])
 def approve_withdrawal():
     tx_id = request.form.get("tx_id")
@@ -35,7 +37,8 @@ def approve_withdrawal():
 
     return redirect(url_for("admin.admin_dashboard"))
 
-# ✅ Start game manually
+# -------------------- GAME START --------------------
+
 @admin_bp.route("/start_game", methods=["POST"])
 def start_game():
     game_id = request.form.get("game_id")
@@ -45,13 +48,15 @@ def start_game():
         db.session.commit()
     return redirect(url_for("admin.admin_dashboard"))
 
-# ✅ Logout route
+# -------------------- LOGOUT --------------------
+
 @admin_bp.route("/logout")
 def logout():
     session.clear()
     return "✅ Logged out"
 
-# ✅ Login via Telegram — YOUR ID: 364344971
+# -------------------- LOGIN VIA TELEGRAM --------------------
+
 @admin_bp.route("/admin/login/364344971")
 def login_via_telegram():
     user = User.query.filter_by(telegram_id="364344971").first()
@@ -60,10 +65,20 @@ def login_via_telegram():
         return redirect(url_for("admin.admin_dashboard"))
     return "❌ Access denied", 403
 
-# ✅ Protect dashboard routes
+# -------------------- ACCESS CONTROL --------------------
+
 @admin_bp.before_request
 def require_admin_login():
-    protected_paths = ["/admin/dashboard", "/approve_withdrawal", "/start_game"]
+    protected_paths = ["/admin/dashboard", "/approve_withdrawal", "/start_game", "/admin/leaderboard"]
     if request.path.startswith(tuple(protected_paths)):
         if "admin_id" not in session:
             return "🔒 You must be logged in as admin", 403
+
+# -------------------- LEADERBOARD --------------------
+
+@admin_bp.route("/admin/leaderboard")
+def leaderboard():
+    top_winners = User.query.order_by(User.games_won.desc()).limit(10).all()
+    most_active = User.query.order_by(User.games_played.desc()).limit(10).all()
+    richest = User.query.order_by(User.balance.desc()).limit(10).all()
+    return render_template("leaderboard.html", top_winners=top_winners, most_active=most_active, richest=richest)
