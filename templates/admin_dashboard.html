@@ -51,6 +51,7 @@
             <tr>
                 <th>User</th>
                 <th>Amount</th>
+                <th>Approval Note</th>
                 <th>Action</th>
             </tr>
             {% for tx in pending_withdrawals %}
@@ -62,9 +63,11 @@
                         <input type="hidden" name="user_id" value="{{ tx.user_id }}">
                         <input type="hidden" name="tx_id" value="{{ tx.id }}">
                         <input type="hidden" name="amount" value="{{ tx.amount }}">
+                        <input type="text" name="note" placeholder="e.g. phone confirmed">
                         <button type="submit">✅ Approve</button>
                     </form>
                 </td>
+                <td></td>
             </tr>
             {% endfor %}
         </table>
