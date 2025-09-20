@@ -6,6 +6,7 @@ let calledNumbers = [];
 let interval;
 let playMode = "{{ play_mode }}"; // passed from backend
 let soundEnabled = {{ 'true' if sound_enabled else 'false' }};
+let telegramId = new URLSearchParams(window.location.search).get("id");
 
 // Generate Bonus Grid (1–75)
 for (let i = 1; i <= 75; i++) {
@@ -60,7 +61,16 @@ function generateCartela() {
   });
 }
 
-generateCartela();
+// Animate bonus number
+function animateBonus(num) {
+  const btn = document.getElementById(`bonus-${num}`);
+  if (btn) {
+    btn.style.backgroundColor = "#4caf50";
+    btn.style.transform = "scale(1.2)";
+    btn.style.transition = "transform 0.3s ease";
+    setTimeout(() => btn.style.transform = "scale(1)", 300);
+  }
+}
 
 // Call Numbers Every 3–4 Seconds
 function startCalling() {
@@ -71,14 +81,13 @@ function startCalling() {
     } while (calledNumbers.includes(num));
 
     calledNumbers.push(num);
-    document.getElementById(`bonus-${num}`).style.backgroundColor = "#4caf50";
+    animateBonus(num);
 
     if (soundEnabled) {
       const audio = new Audio(`/static/audio/number_${num}.mp3`);
       audio.play();
     }
 
-    // Mark on cartela (only in auto mode)
     if (playMode === "auto") {
       const cells = cartela.querySelectorAll(".cell");
       cells.forEach(cell => {
@@ -113,11 +122,11 @@ function checkWin() {
 
 function checkLines(grid) {
   for (let i = 0; i < 5; i++) {
-    if (grid[i].every(Boolean)) return true; // horizontal
-    if (grid.map(row => row[i]).every(Boolean)) return true; // vertical
+    if (grid[i].every(Boolean)) return true;
+    if (grid.map(row => row[i]).every(Boolean)) return true;
   }
-  if ([0, 1, 2, 3, 4].every(i => grid[i][i])) return true; // diagonal \
-  if ([0, 1, 2, 3, 4].every(i => grid[i][4 - i])) return true; // diagonal /
+  if ([0, 1, 2, 3, 4].every(i => grid[i][i])) return true;
+  if ([0, 1, 2, 3, 4].every(i => grid[i][4 - i])) return true;
   return false;
 }
 
@@ -131,12 +140,26 @@ document.getElementById("refresh").addEventListener("click", () => {
   startCalling();
 });
 
-document.getElementById("add-cartela").addEventListener("click", () => {
-  alert("➕ Add Cartela feature coming soon!");
+document.getElementById("add-cartela").addEventListener("click", async () => {
+  const input = prompt("Enter 5 numbers between 1–90, separated by commas:");
+  if (!input) return;
+  const nums = input.split(",").map(n => parseInt(n.trim())).filter(n => n >= 1 && n <= 90);
+  if (nums.length !== 5) {
+    alert("❌ Invalid input. Please enter exactly 5 numbers.");
+    return;
+  }
+  await fetch(`/cartela?id=${telegramId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cartela: nums })
+  });
+  alert("✅ Cartela updated!");
+  generateCartela(); // optional refresh
 });
 
 document.getElementById("bingo").addEventListener("click", () => {
   alert("🎉 Bingo claimed! Admin will verify.");
 });
 
+generateCartela();
 startCalling();
