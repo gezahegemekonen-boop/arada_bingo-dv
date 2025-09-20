@@ -16,7 +16,8 @@ from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.build_main_keyboard import build_main_keyboard
 from routes.admin import admin_bp
-from routes.payment import payment_bp  # ✅ NEW
+from routes.payment import payment_bp
+from routes.leaderboard import leaderboard_bp
 
 logging.basicConfig(level=logging.INFO)
 
@@ -35,7 +36,9 @@ except RuntimeError:
     db.init_app(flask_app)
 
 flask_app.register_blueprint(admin_bp)
-flask_app.register_blueprint(payment_bp)  # ✅ NEW
+flask_app.register_blueprint(payment_bp)
+flask_app.register_blueprint(leaderboard_bp)
+
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 @app.route("/cartela", methods=["GET", "POST"])
@@ -88,7 +91,6 @@ def approve_withdrawal():
         tx.status = "approved"
         db.session.commit()
     return jsonify({"status": "approved"})
-
 LANGUAGE_MAP = {
     "en": {
         "welcome": "Welcome to Arada Bingo Ethiopia!",
@@ -137,7 +139,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     active_refs = [u for u in referrer.referred_users if u.games_played > 0]
                     if len(active_refs) + 1 == 10:
-                                                referrer.balance += 50
+                        referrer.balance += 50
                         db.session.add(Transaction(
                             user_id=referrer.id,
                             type="referral_milestone",
@@ -161,24 +163,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = build_main_keyboard(lang, WEBAPP_URL)
 
     await update.message.reply_text(lang["welcome"], reply_markup=keyboard)
+
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        telegram_id = update.effective_user.id
-        await update.message.reply_text(
-            "🎮 Launching Arada Bingo Ethiopia...",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}?id={telegram_id}"))]
-            ])
-        )
-
-async def preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    with flask_app.app_context():
-        user = User.query.filter_by(telegram_id=telegram_id).first()
-        cartela = user.cartela or [12, 34, 56, 78, 90]
-        animated = "✨ " + " 🎯 ".join(str(n) for n in cartela) + " ✨"
-        await update.message.reply_text(f"🎨 Your cartela:\n{animated}")
-
+    telegram_id = update.effective_user.id
+    await update.message.reply_text(
+        "🎮 Launching Arada Bingo Ethiopia...",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}?id={telegram_id}"))]
+        ])
+    )
 async def edit_cartela(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     text = update.message.text.strip()
@@ -196,39 +189,6 @@ async def edit_cartela(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.session.add(user)
         db.session.commit()
         await update.message.reply_text(f"✅ Cartela updated: {numbers}")
-
-async def join_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    with flask_app.app_context():
-        user = User.query.filter_by(telegram_id=telegram_id).first()
-        lobby = Lobby.query.filter_by(status="waiting").first()
-        if not lobby:
-            lobby = Lobby(status="waiting", jackpot=0)
-            db.session.add(lobby)
-            db.session.commit()
-
-        lobby.players.append(user)
-        db.session.add(lobby)
-        db.session.commit()
-        await update.message.reply_text(f"🧩 Joined lobby #{lobby.id}. Waiting for others...")
-
-async def start_jackpot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    with flask_app.app_context():
-        lobby = Lobby.query.filter(Lobby.players.any(telegram_id=str(telegram_id)), Lobby.status=="waiting").first()
-        if not lobby or len(lobby.players) < 2:
-            await update.message.reply_text("❌ Need at least 2 players to start jackpot round.")
-            return
-
-        lobby.status = "active"
-        lobby.jackpot = len(lobby.players) * 10
-        db.session.add(lobby)
-        db.session.commit()
-
-        for player in lobby.players:
-            await context.bot.send_message(chat_id=int(player.telegram_id), text=f"🎰 Jackpot Round Started!\nJackpot: {lobby.jackpot} birr")
-
-        await update.message.reply_text(f"✅ Jackpot round started with {len(lobby.players)} players.")
 
 async def end_jackpot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message and update.effective_user.id in ADMIN_IDS:
@@ -256,37 +216,23 @@ async def end_jackpot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(f"✅ Jackpot paid to @{winner.username}")
 
-async def jackpot_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        with flask_app.app_context():
-            winners = db.session.query(User.username, func.sum(Transaction.amount))\
-                .join(Transaction).filter(Transaction.type=="jackpot_win")\
-                .group_by(User.username).order_by(func.sum(Transaction.amount).desc()).limit(5).all()
-
-            lines = ["🏆 Jackpot Winners:"]
-            for name, total in winners:
-                lines.append(f"@{name} – {total} birr won")
-
-            await update.message.reply_text("\n".join(lines))
-
 async def referral_contest(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        with flask_app.app_context():
-            users = User.query.all()
-            leaderboard = []
+    with flask_app.app_context():
+        users = User.query.all()
+        leaderboard = []
 
-            for u in users:
-                active_refs = [r for r in u.referred_users if r.games_played > 0]
-                bonus = sum(tx.amount for tx in u.transactions if tx.type in ["referral_bonus", "referral_milestone"])
-                if active_refs:
-                    leaderboard.append((u.username, len(active_refs), bonus))
+        for u in users:
+            active_refs = [r for r in u.referred_users if r.games_played > 0]
+            bonus = sum(tx.amount for tx in u.transactions if tx.type in ["referral_bonus", "referral_milestone"])
+            if active_refs:
+                leaderboard.append((u.username, len(active_refs), bonus))
 
-            leaderboard.sort(key=lambda x: x[1], reverse=True)
-            lines = ["🎁 Referral Contest Leaderboard:"]
-            for name, count, bonus in leaderboard[:10]:
-                lines.append(f"@{name} – {count} active referrals, {bonus} birr earned")
+        leaderboard.sort(key=lambda x: x[1], reverse=True)
+        lines = ["🎁 Referral Contest Leaderboard:"]
+        for name, count, bonus in leaderboard[:10]:
+            lines.append(f"@{name} – {count} active referrals, {bonus} birr earned")
 
-            await update.message.reply_text("\n".join(lines))
+        await update.message.reply_text("\n".join(lines))
 
 async def replay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
@@ -300,75 +246,37 @@ async def replay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = "🎉 You won!" if last_game.winner_id == user.id else "😢 You lost."
         sound = "🔊 Sound: ON" if context.chat_data.get("sound_enabled", True) else "🔇 Sound: OFF"
         await update.message.reply_text(f"🕹️ Last Game #{last_game.id}\n{result}\n{sound}")
-async def remindme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        await update.message.reply_text("📅 Reminder set! We'll notify you before the next game starts.")
 
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        sender_id = update.effective_user.id
-        if sender_id not in ADMIN_IDS:
-            await update.message.reply_text("❌ You are not authorized to broadcast.")
+async def demo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    demo_cartela = sorted(random.sample(range(1, 91), 5))
+    bonus = sorted(random.sample(range(1, 91), 5))
+    animated = "✨ " + " 🎯 ".join(str(n) for n in demo_cartela) + " ✨"
+    await update.message.reply_text(f"🧪 Demo Mode:\nYour cartela: {animated}\nBonus: {bonus}")
+
+async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    with flask_app.app_context():
+        user = User.query.filter_by(telegram_id=telegram_id).first()
+        txs = Transaction.query.filter_by(user_id=user.id).order_by(Transaction.created_at.desc()).limit(5).all()
+        if not txs:
+            await update.message.reply_text("📭 No transactions found.")
             return
 
-        text = update.message.text.replace("/broadcast", "").strip()
-        if not text:
-            await update.message.reply_text("📢 Please include a message to broadcast.")
+        lines = ["📜 Last 5 Transactions:"]
+        for tx in txs:
+            lines.append(f"{tx.type.title()} – {tx.amount} birr – {tx.status}")
+
+        await update.message.reply_text("\n".join(lines))
+
+async def jackpot_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    with flask_app.app_context():
+        lobby = Lobby.query.filter_by(status="waiting").first()
+        if not lobby or not lobby.players:
+            await update.message.reply_text("📭 No players in the jackpot lobby.")
             return
 
-        with flask_app.app_context():
-            users = User.query.all()
-            for user in users:
-                try:
-                    await context.bot.send_message(chat_id=int(user.telegram_id), text=f"📢 Announcement:\n{text}")
-                except Exception as e:
-                    logging.warning(f"Failed to send to {user.telegram_id}: {e}")
-
-        await update.message.reply_text("✅ Broadcast sent to all users.")
-
-async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    current = context.chat_data.get("auto_mode", False)
-    context.chat_data["auto_mode"] = not current
-    status = "ON" if not current else "OFF"
-    await update.message.reply_text(f"🔁 Auto Mode is now {status}.")
-
-async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    current = context.chat_data.get("sound_enabled", True)
-    context.chat_data["sound_enabled"] = not current
-    status = "🔊 Sound ON" if not current else "🔇 Sound OFF"
-    await update.message.reply_text(f"{status}")
-
-async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    keyboard = [
-        [InlineKeyboardButton("CBE Birr", callback_data="deposit_cbe_birr")],
-        [InlineKeyboardButton("Telebirr", callback_data="deposit_telebirr")],
-        [InlineKeyboardButton("CBE Bank", callback_data="deposit_cbe_bank")]
-    ]
-    await query.edit_message_text("💰 Choose your deposit method:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    method = query.data.replace("deposit_", "")
-    context.chat_data["deposit_method"] = method
-
-    instructions = {
-        "cbe_birr": "Send to CBE Birr 0920927761 and reply with the transaction ID.",
-        "telebirr": "Send to Telebirr 0920927761 and reply with the transaction ID.",
-        "cbe_bank": "Deposit to CBE Account 1000316113347 and reply with the transaction ID."
-    }
-
-    await query.answer()
-    await query.edit_message_text(f"💳 {instructions[method]}")
-
-async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "💸 Enter the amount you want to withdraw.\n\nWe will send the payout to:\n- CBE Birr: 0920927761\n- Telebirr: 0920927761\n- CBE Bank: 1000316113347"
-    )
-
+        names = [f"@{p.username}" for p in lobby.players if p.username]
+        await update.message.reply_text(f"👥 Jackpot Lobby:\n{', '.join(names)}")
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
@@ -432,24 +340,25 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
+    telegram_app.add_handler(CommandHandler("preview", preview))
+    telegram_app.add_handler(CommandHandler("edit", edit_cartela))
+    telegram_app.add_handler(CommandHandler("joinlobby", join_lobby))
+    telegram_app.add_handler(CommandHandler("startjackpot", start_jackpot))
+    telegram_app.add_handler(CommandHandler("endjackpot", end_jackpot))
+    telegram_app.add_handler(CommandHandler("jackpot_preview", jackpot_preview))
+    telegram_app.add_handler(CommandHandler("jackpot_leaderboard", jackpot_leaderboard))
+    telegram_app.add_handler(CommandHandler("referral_contest", referral_contest))
+    telegram_app.add_handler(CommandHandler("replay", replay))
+    telegram_app.add_handler(CommandHandler("demo", demo))
+    telegram_app.add_handler(CommandHandler("history", history))
+    telegram_app.add_handler(CommandHandler("remindme", remindme))
+    telegram_app.add_handler(CommandHandler("broadcast", broadcast))
     telegram_app.add_handler(CommandHandler("auto", toggle_auto_mode))
     telegram_app.add_handler(CommandHandler("sound", toggle_sound))
-    telegram_app.add_handler(CommandHandler("help", start))
     telegram_app.add_handler(CommandHandler("stats", stats))
     telegram_app.add_handler(CommandHandler("invite", invite))
     telegram_app.add_handler(CommandHandler("lang", toggle_language))
     telegram_app.add_handler(CommandHandler("leaderboard", leaderboard))
-    telegram_app.add_handler(CommandHandler("referral_leaderboard", referral_leaderboard))
-    telegram_app.add_handler(CommandHandler("history", history))
-    telegram_app.add_handler(CommandHandler("preview", preview))
-    telegram_app.add_handler(CommandHandler("replay", replay))
-    telegram_app.add_handler(CommandHandler("remindme", remindme))
-    telegram_app.add_handler(CommandHandler("broadcast", broadcast))
-    telegram_app.add_handler(CommandHandler("joinlobby", join_lobby))
-    telegram_app.add_handler(CommandHandler("startjackpot", start_jackpot))
-    telegram_app.add_handler(CommandHandler("endjackpot", end_jackpot))
-    telegram_app.add_handler(CommandHandler("jackpot_leaderboard", jackpot_leaderboard))
-    telegram_app.add_handler(CommandHandler("referral_contest", referral_contest))
 
     telegram_app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
     telegram_app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
