@@ -73,7 +73,7 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    type = db.Column(db.String(20), index=True)  # deposit, withdraw, referral_bonus
+    type = db.Column(db.String(20), index=True)  # deposit, withdraw, referral_bonus, jackpot_win
     amount = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(20), default='pending', index=True)
 
@@ -89,7 +89,6 @@ class Transaction(db.Model):
     withdrawal_status = db.Column(db.String(20))
     admin_note = db.Column(db.Text)
 
-    # ✅ Audit trail fields
     approved_by = db.Column(db.String(64))        # Telegram ID or username of admin
     approval_note = db.Column(db.String(200))     # Optional comment
 
@@ -109,6 +108,21 @@ class ScheduledGame(db.Model):
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# -------------------- JACKPOT LOBBY MODEL --------------------
+
+lobby_players = db.Table("lobby_players",
+    db.Column("lobby_id", db.Integer, db.ForeignKey("lobby.id")),
+    db.Column("user_id", db.Integer, db.ForeignKey("user.id"))
+)
+
+class Lobby(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    status = db.Column(db.String(20), default="waiting")  # waiting, active, completed
+    jackpot = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    players = db.relationship("User", secondary=lobby_players, backref="lobbies")
 
 # -------------------- INDEXES --------------------
 
