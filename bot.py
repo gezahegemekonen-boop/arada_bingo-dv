@@ -38,16 +38,16 @@ LANGUAGE_MAP = {
         "welcome": "Welcome to Arada Bingo Ethiopia!",
         "deposit": "💰 Deposit Instructions:\nSend payment to 09XXXXXXXX and reply with the transaction ID.",
         "withdraw": "💸 Withdrawal Request:\nEnter the amount you want to withdraw.",
-        "stats": "📊 Your Stats:\nBalance: {balance} birr\nGames Played: {played}\nGames Won: {won}\nReferrals: {ref_count}\nReferral Link: {link}",
-        "invite": "🎁 Invite your friends!\nShare this link:\n{link}\nYou’ll earn 5 birr per friend, and 50 birr when you reach 10!",
+        "stats": "📊 Your Stats:\nBalance: {balance} birr\nGames Played: {played}\nGames Won: {won}\nReferrals: {ref_count}/10\nReferral Link: {link}",
+        "invite": "🎁 Invite your friends!\nShare this link:\n{link}\nYou’ll earn 5 birr when they play their first game.\nBonus: 50 birr when you reach 10!",
         "language_set": "✅ Language set to English.",
     },
     "am": {
         "welcome": "እንኳን ደህና መጡ ወደ Arada Bingo Ethiopia!",
         "deposit": "💰 የተቀበሉትን ክፍያ ወደ 09XXXXXXXX ያስተላልፉ እና የግብይት መለያውን ያስገቡ።",
         "withdraw": "💸 የመነሻ ጥያቄ፡ የሚወስዱትን መጠን ያስገቡ።",
-        "stats": "📊 የእርስዎ ሁኔታ፡ ቀሪ ባለቤት: {balance} ብር\nተጫዋች ጨዋታዎች: {played}\nየተሸነፉት: {won}\nማስተላለፊያዎች: {ref_count}\nአገናኝ: {link}",
-        "invite": "🎁 ጓደኞችዎን ይጋብዙ!\nይህን አገናኝ ያጋሩ:\n{link}\nከመጀመሪያ ጨዋታ በኋላ 5 ብር ያገኛሉ። 10 ጓደኞች ከጨመሩ በኋላ 50 ብር ያገኛሉ።",
+        "stats": "📊 የእርስዎ ሁኔታ፡ ቀሪ ባለቤት: {balance} ብር\nተጫዋች ጨዋታዎች: {played}\nየተሸነፉት: {won}\nማስተላለፊያዎች: {ref_count}/10\nአገናኝ: {link}",
+        "invite": "🎁 ጓደኞችዎን ይጋብዙ!\nይህን አገናኝ ያጋሩ:\n{link}\nጓደኞችዎ መጀመሪያ ጨዋታ ከጫወቱ በኋላ 5 ብር ያገኛሉ።\n10 ጓደኞች ከጨመሩ በኋላ 50 ብር ያገኛሉ።",
         "language_set": "✅ ቋንቋ ወደ አማርኛ ተቀይሯል።",
     }
 }
@@ -76,29 +76,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 referrer = User.query.filter_by(telegram_id=str(referral_telegram_id)).first()
                 if referrer:
                     user.referrer_id = referrer.id
-                    referrer.balance += 5
-                    db.session.add(Transaction(
-                        user_id=referrer.id,
-                        type="referral_bonus",
-                        amount=5,
-                        status="approved",
-                        reason="Referral bonus"
-                    ))
+                    db.session.add(user)
+                    db.session.commit()
 
-                    # 🎯 Milestone: 10 referrals = 50 birr
-                    if len(referrer.referred_users) + 1 == 10:
+                    # ✅ Reward only if referrer has 10 active referrals
+                    active_refs = [u for u in referrer.referred_users if u.games_played > 0]
+                    if len(active_refs) + 1 == 10:
                         referrer.balance += 50
                         db.session.add(Transaction(
                             user_id=referrer.id,
                             type="referral_milestone",
                             amount=50,
                             status="approved",
-                            reason="Milestone: 10 referrals"
+                            reason="Milestone: 10 active referrals"
                         ))
+                        db.session.add(referrer)
 
-                    db.session.add(referrer)
-
-            db.session.add(user)
+        else:
             db.session.commit()
 
         user_language = user.language
@@ -122,7 +116,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
             link = referral_link(context.bot.username or "AradaBingoBot", user.telegram_id)
-            ref_count = len(user.referred_users)
+            active_refs = [u for u in user.referred_users if u.games_played > 0]
+            ref_count = len(active_refs)
             text = lang["stats"].format(
                 balance=user.balance,
                 played=user.games_played,
@@ -155,19 +150,26 @@ async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
-        context.chat_data.setdefault("auto_mode", True)
-        context.chat_data["auto_mode"] = not context.chat_data["auto_mode"]
-        status = "ON" if context.chat_data["auto_mode"] else "OFF"
-        await update.message.reply_text(f"🔁 Auto Mode: {status}")
+        with flask_app.app_context():
+            top_winners = User.query.order_by(User.games_won.desc()).limit(5).all()
+            most_active = User.query.order_by(User.games_played.desc()).limit(5).all()
+            richest = User.query.order_by(User.balance.desc()).limit(5).all()
 
-async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        context.chat_data.setdefault("sound_enabled", True)
-        context.chat_data["sound_enabled"] = not context.chat_data["sound_enabled"]
-        status = "ON" if context.chat_data["sound_enabled"] else "OFF"
-        await update.message.reply_text(f"🔊 Sound: {status}")
+            lines = ["🏆 Top Winners:"]
+            for u in top_winners:
+                lines.append(f"@{u.username} – {u.games_won} wins")
+
+            lines.append("\n🎯 Most Active:")
+            for u in most_active:
+                lines.append(f"@{u.username} – {u.games_played} games")
+
+            lines.append("\n💰 Richest Players:")
+            for u in richest:
+                lines.append(f"@{u.username} – {u.balance} birr")
+
+            await update.message.reply_text("\n".join(lines))
 
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
@@ -221,24 +223,21 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid number.")
 
-# -------------------- ERROR HANDLER --------------------
-
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
-
-# -------------------- BOT ENTRY POINT --------------------
 
 async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
     telegram_app.add_handler(CommandHandler("auto", toggle_auto_mode))
     telegram_app.add_handler(CommandHandler("sound", toggle_sound))
-    telegram_app.add_handler(CommandHandler("help", start))  # reuse start as help
+    telegram_app.add_handler(CommandHandler("help", start))
     telegram_app.add_handler(CommandHandler("stats", stats))
     telegram_app.add_handler(CommandHandler("invite", invite))
     telegram_app.add_handler(CommandHandler("lang", toggle_language))
+    telegram_app.add_handler(CommandHandler("leaderboard", leaderboard))
 
     telegram_app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
     telegram_app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
@@ -261,4 +260,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
