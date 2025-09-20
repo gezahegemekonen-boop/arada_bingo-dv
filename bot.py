@@ -1,12 +1,14 @@
 import os
 import logging
 import asyncio
-from flask import Flask
+import random
+from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
+from sqlalchemy import func
 from database import db, init_db
 from models import User, Transaction, Game, Lobby
 from utils.is_valid_tx_id import is_valid_tx_id
@@ -18,7 +20,7 @@ from routes.admin import admin_bp
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://127.0.0.1:5000")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo.et")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "364344971").split(",")]
 
 flask_app = Flask(__name__)
@@ -33,6 +35,32 @@ except RuntimeError:
 
 flask_app.register_blueprint(admin_bp)
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+@app.route("/cartela", methods=["GET", "POST"])
+def cartela():
+    telegram_id = request.args.get("id")
+    user = User.query.filter_by(telegram_id=telegram_id).first()
+    if request.method == "GET":
+        return jsonify({"cartela": user.cartela})
+    else:
+        new_cartela = request.json.get("cartela")
+        user.cartela = new_cartela
+        db.session.commit()
+        return jsonify({"status": "updated"})
+
+@app.route("/admin/analytics")
+def analytics():
+    total_users = User.query.count()
+    total_deposits = db.session.query(func.sum(Transaction.amount)).filter_by(type="deposit").scalar()
+    total_withdrawals = db.session.query(func.sum(Transaction.amount)).filter_by(type="withdraw").scalar()
+    top_referrers = User.query.order_by(User.referred_users.desc()).limit(5).all()
+
+    return jsonify({
+        "users": total_users,
+        "deposits": total_deposits or 0,
+        "withdrawals": total_withdrawals or 0,
+        "top_referrers": [u.username for u in top_referrers]
+    })
 
 LANGUAGE_MAP = {
     "en": {
@@ -106,13 +134,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = build_main_keyboard(lang, WEBAPP_URL)
 
     await update.message.reply_text(lang["welcome"], reply_markup=keyboard)
-
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(
             "🎮 Launching Arada Bingo Ethiopia...",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))]
+                [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}?id={update.effective_user.id}"))]
             ])
         )
 
@@ -121,7 +148,8 @@ async def preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with flask_app.app_context():
         user = User.query.filter_by(telegram_id=telegram_id).first()
         cartela = user.cartela or [12, 34, 56, 78, 90]
-        await update.message.reply_text(f"🎨 Your cartela:\n{cartela}")
+        animated = "✨ " + " 🎯 ".join(str(n) for n in cartela) + " ✨"
+        await update.message.reply_text(f"🎨 Your cartela:\n{animated}")
 
 async def edit_cartela(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
@@ -174,41 +202,46 @@ async def start_jackpot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(f"✅ Jackpot round started with {len(lobby.players)} players.")
 
-async def replay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    with flask_app.app_context():
-        user = User.query.filter_by(telegram_id=telegram_id).first()
-        last_game = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).first()
-        if not last_game:
-            await update.message.reply_text("📭 No games played yet.")
-            return
+async def end_jackpot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message and update.effective_user.id in ADMIN_IDS:
+        with flask_app.app_context():
+            lobby = Lobby.query.filter_by(status="active").first()
+            if not lobby or not lobby.players:
+                await update.message.reply_text("❌ No active jackpot lobby.")
+                return
 
-        result = "🎉 You won!" if last_game.winner_id == user.id else "😢 You lost."
-        sound = "🔊 Sound: ON" if context.chat_data.get("sound_enabled", True) else "🔇 Sound: OFF"
-        await update.message.reply_text(f"🕹️ Last Game #{last_game.id}\n{result}\n{sound}")
+            winner = random.choice(lobby.players)
+            winner.balance += lobby.jackpot
+            db.session.add(Transaction(
+                user_id=winner.id,
+                type="jackpot_win",
+                amount=lobby.jackpot,
+                status="approved",
+                reason=f"Jackpot win in lobby #{lobby.id}"
+            ))
+            lobby.status = "completed"
+            db.session.commit()
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            for player in lobby.players:
+                msg = "🎉 You won the jackpot!" if player.id == winner.id else "😢 You lost this round."
+                await context.bot.send_message(chat_id=int(player.telegram_id), text=msg)
+
+            await update.message.reply_text(f"✅ Jackpot paid to @{winner.username}")
+
+async def jackpot_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         with flask_app.app_context():
-            top_winners = User.query.order_by(User.games_won.desc()).limit(5).all()
-            most_active = User.query.order_by(User.games_played.desc()).limit(5).all()
-            richest = User.query.order_by(User.balance.desc()).limit(5).all()
+            winners = db.session.query(User.username, func.sum(Transaction.amount))\
+                .join(Transaction).filter(Transaction.type=="jackpot_win")\
+                .group_by(User.username).order_by(func.sum(Transaction.amount).desc()).limit(5).all()
 
-            lines = ["🏆 Top Winners:"]
-            for u in top_winners:
-                lines.append(f"@{u.username} – {u.games_won} wins")
-
-            lines.append("\n🎯 Most Active:")
-            for u in most_active:
-                lines.append(f"@{u.username} – {u.games_played} games")
-
-            lines.append("\n💰 Richest Players:")
-            for u in richest:
-                lines.append(f"@{u.username} – {u.balance} birr")
+            lines = ["🏆 Jackpot Winners:"]
+            for name, total in winners:
+                lines.append(f"@{name} – {total} birr won")
 
             await update.message.reply_text("\n".join(lines))
 
-async def referral_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def referral_contest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         with flask_app.app_context():
             users = User.query.all()
@@ -221,29 +254,24 @@ async def referral_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYP
                     leaderboard.append((u.username, len(active_refs), bonus))
 
             leaderboard.sort(key=lambda x: x[1], reverse=True)
-            lines = ["📈 Referral Leaderboard:"]
+            lines = ["🎁 Referral Contest Leaderboard:"]
             for name, count, bonus in leaderboard[:10]:
                 lines.append(f"@{name} – {count} active referrals, {bonus} birr earned")
 
             await update.message.reply_text("\n".join(lines))
 
-async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        telegram_id = str(update.effective_user.id)
-        with flask_app.app_context():
-            user = User.query.filter_by(telegram_id=telegram_id).first()
-            games = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).limit(5).all()
-            if not games:
-                await update.message.reply_text("📭 No games played yet.")
-                return
+async def replay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    with flask_app.app_context():
+        user = User.query.filter_by(telegram_id=telegram_id).first()
+        last_game = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).first()
+        if not last_game:
+            await update.message.reply_text("📭 No games played yet.")
+            return
 
-            lines = ["🕹️ Recent Games:"]
-            for g in games:
-                status = g.status
-                payout = g.payout
-                lines.append(f"Game #{g.id} – {status} – Payout: {payout} birr")
-
-            await update.message.reply_text("\n".join(lines))
+        result = "🎉 You won!" if last_game.winner_id == user.id else "😢 You lost."
+        sound = "🔊 Sound: ON" if context.chat_data.get("sound_enabled", True) else "🔇 Sound: OFF"
+        await update.message.reply_text(f"🕹️ Last Game #{last_game.id}\n{result}\n{sound}")
 async def remindme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text("📅 Reminder set! We'll notify you before the next game starts.")
@@ -337,6 +365,28 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid number.")
 
+@app.route("/payment/confirm", methods=["POST"])
+def confirm_payment():
+    data = request.json
+    tx_id = data.get("tx_id")
+    telegram_id = data.get("telegram_id")
+    amount = data.get("amount")
+
+    user = User.query.filter_by(telegram_id=telegram_id).first()
+    if user:
+        user.balance += amount
+        db.session.add(Transaction(
+            user_id=user.id,
+            type="deposit",
+            amount=amount,
+            status="approved",
+            reference=tx_id,
+            method="api"
+        ))
+        db.session.commit()
+        return jsonify({"status": "success"})
+    return jsonify({"status": "user_not_found"})
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
@@ -360,6 +410,9 @@ async def main():
     telegram_app.add_handler(CommandHandler("broadcast", broadcast))
     telegram_app.add_handler(CommandHandler("joinlobby", join_lobby))
     telegram_app.add_handler(CommandHandler("startjackpot", start_jackpot))
+    telegram_app.add_handler(CommandHandler("endjackpot", end_jackpot))
+    telegram_app.add_handler(CommandHandler("jackpot_leaderboard", jackpot_leaderboard))
+    telegram_app.add_handler(CommandHandler("referral_contest", referral_contest))
 
     telegram_app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
     telegram_app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
@@ -382,4 +435,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
