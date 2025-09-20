@@ -255,6 +255,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 # -------------------- BOT ENTRY POINT --------------------
 
+import asyncio
+
 async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
@@ -275,17 +277,15 @@ async def main():
     telegram_app.add_handler(MessageHandler(filters.TEXT, handle_user_input))
     telegram_app.add_error_handler(error_handler)
 
-    logging.info("✅ Arada Bingo Ethiopia bot is running via polling...")
+    logging.info("✅ Arada Bingo Ethiopia bot is starting...")
 
-    # 🧼 Clear webhook to avoid polling conflict
+    # ✅ Proper async startup sequence
+    await telegram_app.initialize()
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
-
-    # 🔐 Push Flask context globally
     flask_app.app_context().push()
-
-    # 🚀 Start polling
-    await telegram_app.run_polling(drop_pending_updates=True)
+    await telegram_app.start()
+    await telegram_app.updater.start_polling()
+    await telegram_app.updater.wait_until_closed()
 
 if __name__ == "__main__":
     asyncio.run(main())
-
