@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 import random
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
@@ -23,7 +23,7 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo.et")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "364344971").split(",")]
 
-flask_app = Flask(__name__)
+flask_app = Flask(__name__, template_folder="templates", static_folder="static")
 flask_app.secret_key = os.getenv("FLASK_SECRET", "bot_secret")
 
 try:
@@ -41,12 +41,20 @@ def cartela():
     telegram_id = request.args.get("id")
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if request.method == "GET":
-        return jsonify({"cartela": user.cartela})
+        return jsonify({
+            "cartela": user.cartela,
+            "bonus": [random.randint(1, 90) for _ in range(5)],
+            "winner": str(user.telegram_id) if user.games_won > 0 else None
+        })
     else:
         new_cartela = request.json.get("cartela")
         user.cartela = new_cartela
         db.session.commit()
         return jsonify({"status": "updated"})
+
+@app.route("/cartela-editor")
+def cartela_editor():
+    return render_template("cartela.html", game_id="12345", entry_price=10, player_count=5, pool=50, sound_enabled=True, play_mode="jackpot")
 
 @app.route("/admin/analytics")
 def analytics():
@@ -136,10 +144,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(lang["welcome"], reply_markup=keyboard)
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
+        telegram_id = update.effective_user.id
         await update.message.reply_text(
             "🎮 Launching Arada Bingo Ethiopia...",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}?id={update.effective_user.id}"))]
+                [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}?id={telegram_id}"))]
             ])
         )
 
