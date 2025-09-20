@@ -1,4 +1,3 @@
-# models.py
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 
@@ -89,6 +88,10 @@ class Transaction(db.Model):
     withdrawal_phone = db.Column(db.String(20))
     withdrawal_status = db.Column(db.String(20))
     admin_note = db.Column(db.Text)
+
+    # ✅ Audit trail fields
+    approved_by = db.Column(db.String(64))        # Telegram ID or username of admin
+    approval_note = db.Column(db.String(200))     # Optional comment
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime)
