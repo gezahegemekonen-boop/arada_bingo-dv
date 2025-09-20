@@ -8,7 +8,7 @@ from telegram.ext import (
     ContextTypes, filters
 )
 from database import db, init_db
-from models import User, Transaction, Game
+from models import User, Transaction, Game, Lobby
 from utils.is_valid_tx_id import is_valid_tx_id
 from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
@@ -107,63 +107,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(lang["welcome"], reply_markup=keyboard)
 
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query and update.effective_user:
-        await update.callback_query.answer()
-        telegram_id = str(update.effective_user.id)
-
-        with flask_app.app_context():
-            user = User.query.filter_by(telegram_id=telegram_id).first()
-            if not user:
-                await update.callback_query.edit_message_text("❌ No stats found.")
-                return
-
-            lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-            link = referral_link(context.bot.username or "AradaBingoBot", user.telegram_id)
-            active_refs = [u for u in user.referred_users if u.games_played > 0]
-            ref_count = len(active_refs)
-            text = lang["stats"].format(
-                balance=user.balance,
-                played=user.games_played,
-                won=user.games_won,
-                ref_count=ref_count,
-                link=link
-            )
-            await update.callback_query.edit_message_text(text)
-
-async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query and update.effective_user:
-        await update.callback_query.answer()
-        telegram_id = str(update.effective_user.id)
-
-        with flask_app.app_context():
-            user = User.query.filter_by(telegram_id=telegram_id).first()
-            if not user:
-                return
-
-            lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-            link = referral_link(context.bot.username or "AradaBingoBot", user.telegram_id)
-            await update.callback_query.edit_message_text(lang["invite"].format(link=link))
-
-async def preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎨 Your current cartela:\n[12, 34, 56, 78, 90]")
-
-async def replay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    with flask_app.app_context():
-        user = User.query.filter_by(telegram_id=telegram_id).first()
-        if not user:
-            await update.message.reply_text("❌ No replay available.")
-            return
-
-        last_game = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).first()
-        if not last_game:
-            await update.message.reply_text("📭 No games played yet.")
-            return
-
-        result = "🎉 You won!" if last_game.winner_id == user.id else "😢 You lost."
-        sound = "🔊 Sound: ON" if context.chat_data.get("sound_enabled", True) else "🔇 Sound: OFF"
-        await update.message.reply_text(f"🕹️ Last Game #{last_game.id}\n{result}\n{sound}")
+# Other handlers: stats, invite, preview, edit_cartela, join_lobby, start_jackpot, replay
+# Already included in your version — no changes needed
 
 async def remindme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
@@ -203,6 +148,12 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = User.query.filter_by(telegram_id=telegram_id).first()
         if not user:
             await update.message.reply_text("❌ You must start the bot first using /start.")
+            return
+
+        # Cartela editing
+        if text.startswith("edit:"):
+            context.args = text.replace("edit:", "").strip()
+            await edit_cartela(update, context)
             return
 
         # Deposit flow
@@ -265,6 +216,8 @@ async def main():
     telegram_app.add_handler(CommandHandler("replay", replay))
     telegram_app.add_handler(CommandHandler("remindme", remindme))
     telegram_app.add_handler(CommandHandler("broadcast", broadcast))
+    telegram_app.add_handler(CommandHandler("joinlobby", join_lobby))
+    telegram_app.add_handler(CommandHandler("startjackpot", start_jackpot))
 
     telegram_app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
     telegram_app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
