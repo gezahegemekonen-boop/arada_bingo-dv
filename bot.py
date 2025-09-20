@@ -16,6 +16,7 @@ from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.build_main_keyboard import build_main_keyboard
 from routes.admin import admin_bp
+from routes.payment import payment_bp  # ✅ NEW
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,6 +35,7 @@ except RuntimeError:
     db.init_app(flask_app)
 
 flask_app.register_blueprint(admin_bp)
+flask_app.register_blueprint(payment_bp)  # ✅ NEW
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 @app.route("/cartela", methods=["GET", "POST"])
@@ -56,33 +58,50 @@ def cartela():
 def cartela_editor():
     return render_template("cartela.html", game_id="12345", entry_price=10, player_count=5, pool=50, sound_enabled=True, play_mode="jackpot")
 
-@app.route("/admin/analytics")
-def analytics():
-    total_users = User.query.count()
-    total_deposits = db.session.query(func.sum(Transaction.amount)).filter_by(type="deposit").scalar()
-    total_withdrawals = db.session.query(func.sum(Transaction.amount)).filter_by(type="withdraw").scalar()
-    top_referrers = User.query.order_by(User.referred_users.desc()).limit(5).all()
+@app.route("/admin/dashboard")
+def admin_dashboard():
+    pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
+    pending_withdrawals = Transaction.query.filter_by(type="withdraw", status="pending").all()
+    games = Game.query.order_by(Game.created_at.desc()).limit(10).all()
+    players = User.query.order_by(User.created_at.desc()).limit(10).all()
+    return render_template("admin_dashboard.html", pending_deposits=pending_deposits, pending_withdrawals=pending_withdrawals, games=games, players=players)
 
-    return jsonify({
-        "users": total_users,
-        "deposits": total_deposits or 0,
-        "withdrawals": total_withdrawals or 0,
-        "top_referrers": [u.username for u in top_referrers]
-    })
+@app.route("/admin/approve_deposit", methods=["POST"])
+def approve_deposit():
+    tx_id = request.form.get("tx_id")
+    amount = int(request.form.get("amount"))
+    user_id = int(request.form.get("user_id"))
+    tx = Transaction.query.get(tx_id)
+    user = User.query.get(user_id)
+    if tx and user:
+        tx.status = "approved"
+        tx.amount = amount
+        user.balance += amount
+        db.session.commit()
+    return jsonify({"status": "approved"})
+
+@app.route("/admin/approve_withdrawal", methods=["POST"])
+def approve_withdrawal():
+    tx_id = request.form.get("tx_id")
+    tx = Transaction.query.get(tx_id)
+    if tx and tx.status == "pending":
+        tx.status = "approved"
+        db.session.commit()
+    return jsonify({"status": "approved"})
 
 LANGUAGE_MAP = {
     "en": {
         "welcome": "Welcome to Arada Bingo Ethiopia!",
-        "deposit": "💰 Deposit Instructions:\nSend payment to 09XXXXXXXX and reply with the transaction ID.",
-        "withdraw": "💸 Withdrawal Request:\nEnter the amount you want to withdraw.",
+        "deposit": "💰 Deposit Instructions:\nSend to:\n- CBE Birr: 0920927761\n- Telebirr: 0920927761\n- CBE Bank: 1000316113347\nThen reply with your transaction ID.",
+        "withdraw": "💸 Withdrawal Request:\nEnter the amount you want to withdraw.\nWe will send to your preferred account.",
         "stats": "📊 Your Stats:\nBalance: {balance} birr\nGames Played: {played}\nGames Won: {won}\nReferrals: {ref_count}/10\nReferral Link: {link}",
         "invite": "🎁 Invite your friends!\nShare this link:\n{link}\nYou’ll earn 5 birr when they play their first game.\nBonus: 50 birr when you reach 10!",
         "language_set": "✅ Language set to English.",
     },
     "am": {
         "welcome": "እንኳን ደህና መጡ ወደ Arada Bingo Ethiopia!",
-        "deposit": "💰 የተቀበሉትን ክፍያ ወደ 09XXXXXXXX ያስተላልፉ እና የግብይት መለያውን ያስገቡ።",
-        "withdraw": "💸 የመነሻ ጥያቄ፡ የሚወስዱትን መጠን ያስገቡ።",
+        "deposit": "💰 የተቀበሉትን ክፍያ ወደ:\n- CBE Birr: 0920927761\n- Telebirr: 0920927761\n- CBE Bank: 1000316113347\nያስተላልፉ እና የግብይት መለያውን ያስገቡ።",
+        "withdraw": "💸 የመነሻ ጥያቄ፡ የሚወስዱትን መጠን ያስገቡ። ክፍያው ወደ ተመረጠው መለያ ይሄዳል።",
         "stats": "📊 የእርስዎ ሁኔታ፡ ቀሪ ባለቤት: {balance} ብር\nተጫዋች ጨዋታዎች: {played}\nየተሸነፉት: {won}\nማስተላለፊያዎች: {ref_count}/10\nአገናኝ: {link}",
         "invite": "🎁 ጓደኞችዎን ይጋብዙ!\nይህን አገናኝ ያጋሩ:\n{link}\nጓደኞችዎ መጀመሪያ ጨዋታ ከጫወቱ በኋላ 5 ብር ያገኛሉ።\n10 ጓደኞች ከጨመሩ በኋላ 50 ብር ያገኛሉ።",
         "language_set": "✅ ቋንቋ ወደ አማርኛ ተቀይሯል።",
@@ -118,7 +137,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     active_refs = [u for u in referrer.referred_users if u.games_played > 0]
                     if len(active_refs) + 1 == 10:
-                        referrer.balance += 50
+                                                referrer.balance += 50
                         db.session.add(Transaction(
                             user_id=referrer.id,
                             type="referral_milestone",
@@ -319,6 +338,37 @@ async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = "🔊 Sound ON" if not current else "🔇 Sound OFF"
     await update.message.reply_text(f"{status}")
 
+async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    keyboard = [
+        [InlineKeyboardButton("CBE Birr", callback_data="deposit_cbe_birr")],
+        [InlineKeyboardButton("Telebirr", callback_data="deposit_telebirr")],
+        [InlineKeyboardButton("CBE Bank", callback_data="deposit_cbe_bank")]
+    ]
+    await query.edit_message_text("💰 Choose your deposit method:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    method = query.data.replace("deposit_", "")
+    context.chat_data["deposit_method"] = method
+
+    instructions = {
+        "cbe_birr": "Send to CBE Birr 0920927761 and reply with the transaction ID.",
+        "telebirr": "Send to Telebirr 0920927761 and reply with the transaction ID.",
+        "cbe_bank": "Deposit to CBE Account 1000316113347 and reply with the transaction ID."
+    }
+
+    await query.answer()
+    await query.edit_message_text(f"💳 {instructions[method]}")
+
+async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "💸 Enter the amount you want to withdraw.\n\nWe will send the payout to:\n- CBE Birr: 0920927761\n- Telebirr: 0920927761\n- CBE Bank: 1000316113347"
+    )
+
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
@@ -373,28 +423,6 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"✅ Withdrawal request for {amount} birr submitted.")
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid number.")
-
-@app.route("/payment/confirm", methods=["POST"])
-def confirm_payment():
-    data = request.json
-    tx_id = data.get("tx_id")
-    telegram_id = data.get("telegram_id")
-    amount = data.get("amount")
-
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    if user:
-        user.balance += amount
-        db.session.add(Transaction(
-            user_id=user.id,
-            type="deposit",
-            amount=amount,
-            status="approved",
-            reference=tx_id,
-            method="api"
-        ))
-        db.session.commit()
-        return jsonify({"status": "success"})
-    return jsonify({"status": "user_not_found"})
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
