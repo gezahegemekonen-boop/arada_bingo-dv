@@ -13,11 +13,18 @@ bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
 @admin_bp.route("/admin/dashboard")
 def admin_dashboard():
     pending_withdrawals = Transaction.query.filter_by(type="withdraw", status="pending").all()
+    pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
     games = Game.query.order_by(Game.created_at.desc()).limit(10).all()
     players = User.query.order_by(User.created_at.desc()).limit(10).all()
-    return render_template("admin_dashboard.html", pending_withdrawals=pending_withdrawals, games=games, players=players)
+    return render_template(
+        "admin_dashboard.html",
+        pending_withdrawals=pending_withdrawals,
+        pending_deposits=pending_deposits,
+        games=games,
+        players=players
+    )
 
-# -------------------- WITHDRAWAL APPROVAL --------------------
+# -------------------- APPROVE WITHDRAWAL --------------------
 
 @admin_bp.route("/approve_withdrawal", methods=["POST"])
 def approve_withdrawal():
@@ -37,7 +44,33 @@ def approve_withdrawal():
 
     return redirect(url_for("admin.admin_dashboard"))
 
-# -------------------- GAME START --------------------
+# -------------------- APPROVE DEPOSIT --------------------
+
+@admin_bp.route("/approve_deposit", methods=["POST"])
+def approve_deposit():
+    tx_id = request.form.get("tx_id")
+    user_id = request.form.get("user_id")
+    amount = float(request.form.get("amount"))
+
+    tx = Transaction.query.get(tx_id)
+    user = User.query.get(user_id)
+
+    if tx and tx.status == "pending":
+        tx.status = "approved"
+        tx.completed_at = db.func.now()
+        user.balance += amount
+        db.session.commit()
+
+        message = (
+            f"💰 Deposit confirmed!\n"
+            f"Your balance is now {user.balance} birr.\n\n"
+            f"እባኮትን የተሰጠውን ቀሪ ገንዘብ በተጫወት ለመጠቀም ዝግጁ ይሁኑ።"
+        )
+        asyncio.run(notify_user(bot, user.telegram_id, message))
+
+    return redirect(url_for("admin.admin_dashboard"))
+
+# -------------------- START GAME --------------------
 
 @admin_bp.route("/start_game", methods=["POST"])
 def start_game():
@@ -72,6 +105,7 @@ def require_admin_login():
     protected_paths = [
         "/admin/dashboard",
         "/approve_withdrawal",
+        "/approve_deposit",
         "/start_game",
         "/admin/leaderboard",
         "/admin/referrals"
@@ -80,7 +114,7 @@ def require_admin_login():
         if "admin_id" not in session:
             return "🔒 You must be logged in as admin", 403
 
-# -------------------- LEADERBOARD --------------------
+# -------------------- GAME LEADERBOARD --------------------
 
 @admin_bp.route("/admin/leaderboard")
 def leaderboard():
