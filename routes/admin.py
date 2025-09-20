@@ -51,10 +51,10 @@ def logout():
     session.clear()
     return "✅ Logged out"
 
-# ✅ Login via Telegram
-@admin_bp.route("/admin/login/<int:telegram_id>")
-def login_via_telegram(telegram_id):
-    user = User.query.filter_by(telegram_id=str(telegram_id)).first()
+# ✅ Login via Telegram — YOUR ID: 364344971
+@admin_bp.route("/admin/login/364344971")
+def login_via_telegram():
+    user = User.query.filter_by(telegram_id="364344971").first()
     if user and user.is_admin:
         session["admin_id"] = user.id
         return redirect(url_for("admin.admin_dashboard"))
