@@ -1,11 +1,8 @@
-# bot.py (Part 1)
 import os
 import logging
 import asyncio
 from flask import Flask
-from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
@@ -16,8 +13,6 @@ from utils.is_valid_tx_id import is_valid_tx_id
 from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.build_main_keyboard import build_main_keyboard
-
-# ✅ NEW: Register admin routes
 from routes.admin import admin_bp
 
 logging.basicConfig(level=logging.INFO)
@@ -35,9 +30,7 @@ except RuntimeError:
     flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(flask_app)
 
-# ✅ Register admin blueprint
 flask_app.register_blueprint(admin_bp)
-
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 LANGUAGE_MAP = {
@@ -45,16 +38,16 @@ LANGUAGE_MAP = {
         "welcome": "Welcome to Arada Bingo Ethiopia!",
         "deposit": "💰 Deposit Instructions:\nSend payment to 09XXXXXXXX and reply with the transaction ID.",
         "withdraw": "💸 Withdrawal Request:\nEnter the amount you want to withdraw.",
-        "stats": "📊 Your Stats:\nBalance: {balance} birr\nGames Played: {played}\nGames Won: {won}\nReferral Link: {link}",
-        "invite": "🎁 Invite your friends!\nShare this link:\n{link}\nYou’ll earn 5 birr when they play their first game.",
+        "stats": "📊 Your Stats:\nBalance: {balance} birr\nGames Played: {played}\nGames Won: {won}\nReferrals: {ref_count}\nReferral Link: {link}",
+        "invite": "🎁 Invite your friends!\nShare this link:\n{link}\nYou’ll earn 5 birr per friend, and 50 birr when you reach 10!",
         "language_set": "✅ Language set to English.",
     },
     "am": {
         "welcome": "እንኳን ደህና መጡ ወደ Arada Bingo Ethiopia!",
         "deposit": "💰 የተቀበሉትን ክፍያ ወደ 09XXXXXXXX ያስተላልፉ እና የግብይት መለያውን ያስገቡ።",
         "withdraw": "💸 የመነሻ ጥያቄ፡ የሚወስዱትን መጠን ያስገቡ።",
-        "stats": "📊 የእርስዎ ሁኔታ፡ ቀሪ ባለቤት: {balance} ብር\nተጫዋች ጨዋታዎች: {played}\nየተሸነፉት: {won}\nየማስተላለፊያ አገናኝ: {link}",
-        "invite": "🎁 ጓደኞችዎን ይጋብዙ!\nይህን አገናኝ ያጋሩ:\n{link}\nከመጀመሪያ ጨዋታ በኋላ 5 ብር ያገኛሉ።",
+        "stats": "📊 የእርስዎ ሁኔታ፡ ቀሪ ባለቤት: {balance} ብር\nተጫዋች ጨዋታዎች: {played}\nየተሸነፉት: {won}\nማስተላለፊያዎች: {ref_count}\nአገናኝ: {link}",
+        "invite": "🎁 ጓደኞችዎን ይጋብዙ!\nይህን አገናኝ ያጋሩ:\n{link}\nከመጀመሪያ ጨዋታ በኋላ 5 ብር ያገኛሉ። 10 ጓደኞች ከጨመሩ በኋላ 50 ብር ያገኛሉ።",
         "language_set": "✅ ቋንቋ ወደ አማርኛ ተቀይሯል።",
     }
 }
@@ -64,34 +57,49 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     args = context.args
-    referral_id = int(args[0]) if args and args[0].isdigit() else None
+    referral_telegram_id = int(args[0]) if args and args[0].isdigit() else None
     telegram_id = update.effective_user.id
     username = update.effective_user.username
 
     with flask_app.app_context():
         user = User.query.filter_by(telegram_id=str(telegram_id)).first()
+
         if not user:
             user = User(
                 telegram_id=str(telegram_id),
                 username=username,
                 balance=0,
-                referrer_id=referral_id,
                 language="en"
             )
+
+            if referral_telegram_id and referral_telegram_id != telegram_id:
+                referrer = User.query.filter_by(telegram_id=str(referral_telegram_id)).first()
+                if referrer:
+                    user.referrer_id = referrer.id
+                    referrer.balance += 5
+                    db.session.add(Transaction(
+                        user_id=referrer.id,
+                        type="referral_bonus",
+                        amount=5,
+                        status="approved",
+                        reason="Referral bonus"
+                    ))
+
+                    # 🎯 Milestone: 10 referrals = 50 birr
+                    if len(referrer.referred_users) + 1 == 10:
+                        referrer.balance += 50
+                        db.session.add(Transaction(
+                            user_id=referrer.id,
+                            type="referral_milestone",
+                            amount=50,
+                            status="approved",
+                            reason="Milestone: 10 referrals"
+                        ))
+
+                    db.session.add(referrer)
+
             db.session.add(user)
             db.session.commit()
-
-        if referral_id and referral_id != user.id:
-            referrer = User.query.get(referral_id)
-            if referrer:
-                referrer.balance += 5
-                db.session.add(Transaction(
-                    user_id=referrer.id,
-                    type="referral_bonus",
-                    amount=5,
-                    status="approved"
-                ))
-                db.session.commit()
 
         user_language = user.language
 
@@ -113,51 +121,16 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-            link = referral_link(context.bot.username or "AradaBingoBot", user.id)
+            link = referral_link(context.bot.username or "AradaBingoBot", user.telegram_id)
+            ref_count = len(user.referred_users)
             text = lang["stats"].format(
                 balance=user.balance,
                 played=user.games_played,
                 won=user.games_won,
+                ref_count=ref_count,
                 link=link
             )
             await update.callback_query.edit_message_text(text)
-
-async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"), LANGUAGE_MAP["en"])
-        await update.callback_query.edit_message_text(lang["withdraw"])
-
-async def deposit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        keyboard = [
-            [InlineKeyboardButton("📲 CBE Birr", callback_data="deposit_cbe_birr")],
-            [InlineKeyboardButton("📲 Telebirr", callback_data="deposit_telebirr")],
-            [InlineKeyboardButton("🏦 CBE Bank", callback_data="deposit_cbe_bank")]
-        ]
-        await update.callback_query.edit_message_text(
-            "💰 Choose your deposit method:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-async def deposit_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query and update.callback_query.data:
-        await update.callback_query.answer()
-        method = update.callback_query.data.split("_")[1]
-        context.chat_data["deposit_method"] = method
-
-        msg = {
-            "cbe_birr": "📲 CBE Birr Deposit:\nSend to 0920927761 and reply with your transaction ID.",
-            "telebirr": "📲 Telebirr Deposit:\nSend to 0920927761 and reply with your transaction ID.",
-            "cbe_bank": "🏦 CBE Bank Deposit:\nAccount Number: 1000316113347\nThen reply with your transaction ID."
-        }.get(method, "❌ Unknown method.")
-
-        await update.callback_query.edit_message_text(msg)
-
-# bot.py (Part 2)
-
-# -------------------- INVITE & GAME LAUNCH --------------------
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query and update.effective_user:
@@ -170,7 +143,7 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             lang = LANGUAGE_MAP.get(user.language, LANGUAGE_MAP["en"])
-            link = referral_link(context.bot.username or "AradaBingoBot", user.id)
+            link = referral_link(context.bot.username or "AradaBingoBot", user.telegram_id)
             await update.callback_query.edit_message_text(lang["invite"].format(link=link))
 
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -181,8 +154,6 @@ async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))]
             ])
         )
-
-# -------------------- TOGGLE SETTINGS --------------------
 
 async def toggle_auto_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
@@ -197,8 +168,6 @@ async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data["sound_enabled"] = not context.chat_data["sound_enabled"]
         status = "ON" if context.chat_data["sound_enabled"] else "OFF"
         await update.message.reply_text(f"🔊 Sound: {status}")
-
-# -------------------- USER INPUT HANDLER --------------------
 
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
@@ -292,3 +261,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
