@@ -17,6 +17,9 @@ from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.build_main_keyboard import build_main_keyboard
 
+# ✅ NEW: Register admin routes
+from routes.admin import admin_bp
+
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -31,6 +34,9 @@ except RuntimeError:
     flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///arada.db"
     flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(flask_app)
+
+# ✅ Register admin blueprint
+flask_app.register_blueprint(admin_bp)
 
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -255,8 +261,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 # -------------------- BOT ENTRY POINT --------------------
 
-import asyncio
-
 async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
@@ -279,7 +283,6 @@ async def main():
 
     logging.info("✅ Arada Bingo Ethiopia bot is starting...")
 
-    # ✅ Proper async startup sequence
     await telegram_app.initialize()
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
     flask_app.app_context().push()
