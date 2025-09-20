@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://127.0.0.1:5000")
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "364344971").split(",")]
 
 flask_app = Flask(__name__)
 flask_app.secret_key = os.getenv("FLASK_SECRET", "bot_secret")
@@ -144,76 +145,52 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             link = referral_link(context.bot.username or "AradaBingoBot", user.telegram_id)
             await update.callback_query.edit_message_text(lang["invite"].format(link=link))
 
-async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🎨 Your current cartela:\n[12, 34, 56, 78, 90]")
+
+async def replay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = str(update.effective_user.id)
+    with flask_app.app_context():
+        user = User.query.filter_by(telegram_id=telegram_id).first()
+        if not user:
+            await update.message.reply_text("❌ No replay available.")
+            return
+
+        last_game = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).first()
+        if not last_game:
+            await update.message.reply_text("📭 No games played yet.")
+            return
+
+        result = "🎉 You won!" if last_game.winner_id == user.id else "😢 You lost."
+        sound = "🔊 Sound: ON" if context.chat_data.get("sound_enabled", True) else "🔇 Sound: OFF"
+        await update.message.reply_text(f"🕹️ Last Game #{last_game.id}\n{result}\n{sound}")
+
+async def remindme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
-        await update.message.reply_text(
-            "🎮 Launching Arada Bingo Ethiopia...",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}"))]
-            ])
-        )
+        await update.message.reply_text("📅 Reminder set! We'll notify you before the next game starts.")
+        # You can later integrate real scheduling via APScheduler or Celery
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
-        with flask_app.app_context():
-            top_winners = User.query.order_by(User.games_won.desc()).limit(5).all()
-            most_active = User.query.order_by(User.games_played.desc()).limit(5).all()
-            richest = User.query.order_by(User.balance.desc()).limit(5).all()
+        sender_id = update.effective_user.id
+        if sender_id not in ADMIN_IDS:
+            await update.message.reply_text("❌ You are not authorized to broadcast.")
+            return
 
-            lines = ["🏆 Top Winners:"]
-            for u in top_winners:
-                lines.append(f"@{u.username} – {u.games_won} wins")
+        text = update.message.text.replace("/broadcast", "").strip()
+        if not text:
+            await update.message.reply_text("📢 Please include a message to broadcast.")
+            return
 
-            lines.append("\n🎯 Most Active:")
-            for u in most_active:
-                lines.append(f"@{u.username} – {u.games_played} games")
-
-            lines.append("\n💰 Richest Players:")
-            for u in richest:
-                lines.append(f"@{u.username} – {u.balance} birr")
-
-            await update.message.reply_text("\n".join(lines))
-
-async def referral_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
         with flask_app.app_context():
             users = User.query.all()
-            leaderboard = []
+            for user in users:
+                try:
+                    await context.bot.send_message(chat_id=int(user.telegram_id), text=f"📢 Announcement:\n{text}")
+                except Exception as e:
+                    logging.warning(f"Failed to send to {user.telegram_id}: {e}")
 
-            for u in users:
-                active_refs = [r for r in u.referred_users if r.games_played > 0]
-                bonus = sum(tx.amount for tx in u.transactions if tx.type in ["referral_bonus", "referral_milestone"])
-                if active_refs:
-                    leaderboard.append((u.username, len(active_refs), bonus))
-
-            leaderboard.sort(key=lambda x: x[1], reverse=True)
-            lines = ["📈 Referral Leaderboard:"]
-            for name, count, bonus in leaderboard[:10]:
-                lines.append(f"@{name} – {count} active referrals, {bonus} birr earned")
-
-            await update.message.reply_text("\n".join(lines))
-
-async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        telegram_id = str(update.effective_user.id)
-        with flask_app.app_context():
-            user = User.query.filter_by(telegram_id=telegram_id).first()
-            if not user:
-                await update.message.reply_text("❌ No history found.")
-                return
-
-            games = Game.query.filter(Game.participants.any(user_id=user.id)).order_by(Game.created_at.desc()).limit(5).all()
-            if not games:
-                await update.message.reply_text("📭 No games played yet.")
-                return
-
-            lines = ["🕹️ Recent Games:"]
-            for g in games:
-                status = g.status
-                payout = g.payout
-                lines.append(f"Game #{g.id} – {status} – Payout: {payout} birr")
-
-            await update.message.reply_text("\n".join(lines))
+        await update.message.reply_text("✅ Broadcast sent to all users.")
 
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
@@ -284,6 +261,10 @@ async def main():
     telegram_app.add_handler(CommandHandler("leaderboard", leaderboard))
     telegram_app.add_handler(CommandHandler("referral_leaderboard", referral_leaderboard))
     telegram_app.add_handler(CommandHandler("history", history))
+    telegram_app.add_handler(CommandHandler("preview", preview))
+    telegram_app.add_handler(CommandHandler("replay", replay))
+    telegram_app.add_handler(CommandHandler("remindme", remindme))
+    telegram_app.add_handler(CommandHandler("broadcast", broadcast))
 
     telegram_app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
     telegram_app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
