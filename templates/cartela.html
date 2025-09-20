@@ -47,6 +47,68 @@
     <p>© Arada Bingo Ethiopia 2025</p>
   </footer>
 
-  <script src="{{ url_for('static', filename='js/cartela.js') }}"></script>
+  <script>
+    const telegramId = new URLSearchParams(window.location.search).get("id");
+    const cartelaGrid = document.getElementById("cartela");
+    const bonusGrid = document.getElementById("bonus-numbers");
+    const winBanner = document.getElementById("win-banner");
+
+    async function loadCartela() {
+      document.getElementById("loading").style.display = "block";
+      const res = await fetch(`/cartela?id=${telegramId}`);
+      const data = await res.json();
+      renderCartela(data.cartela);
+      renderBonus(data.bonus || []);
+      if (data.winner === telegramId) {
+        winBanner.style.display = "block";
+      }
+      document.getElementById("loading").style.display = "none";
+    }
+
+    function renderCartela(numbers) {
+      cartelaGrid.innerHTML = "";
+      numbers.forEach(n => {
+        const div = document.createElement("div");
+        div.className = "number selected";
+        div.textContent = n;
+        cartelaGrid.appendChild(div);
+      });
+    }
+
+    function renderBonus(numbers) {
+      bonusGrid.innerHTML = "";
+      numbers.forEach(n => {
+        const div = document.createElement("div");
+        div.className = "number bonus";
+        div.textContent = n;
+        bonusGrid.appendChild(div);
+      });
+    }
+
+    document.getElementById("refresh").onclick = loadCartela;
+
+    document.getElementById("add-cartela").onclick = async () => {
+      const input = prompt("Enter 5 numbers between 1–90, separated by commas:");
+      if (!input) return;
+      const nums = input.split(",").map(n => parseInt(n.trim())).filter(n => n >= 1 && n <= 90);
+      if (nums.length !== 5) {
+        alert("❌ Invalid input. Please enter exactly 5 numbers.");
+        return;
+      }
+      await fetch(`/cartela?id=${telegramId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartela: nums })
+      });
+      alert("✅ Cartela updated!");
+      loadCartela();
+    };
+
+    document.getElementById("bingo").onclick = () => {
+      alert("🎉 Bingo submitted! Waiting for result...");
+    };
+
+    loadCartela();
+  </script>
 </body>
 </html>
