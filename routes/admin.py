@@ -31,13 +31,18 @@ def approve_withdrawal():
     tx_id = request.form.get("tx_id")
     user_id = request.form.get("user_id")
     amount = float(request.form.get("amount"))
+    note = request.form.get("note", "")
+    admin_id = session.get("admin_id")
 
     tx = Transaction.query.get(tx_id)
     user = User.query.get(user_id)
+    admin = User.query.get(admin_id)
 
     if tx and tx.status == "pending":
         tx.status = "approved"
         tx.completed_at = db.func.now()
+        tx.approved_by = admin.telegram_id if admin else "unknown"
+        tx.approval_note = note
         user.balance -= amount
         db.session.commit()
         asyncio.run(notify_user(bot, user.telegram_id, f"✅ Your withdrawal of {amount} birr has been approved."))
@@ -108,7 +113,8 @@ def require_admin_login():
         "/approve_deposit",
         "/start_game",
         "/admin/leaderboard",
-        "/admin/referrals"
+        "/admin/referrals",
+        "/admin/audit"
     ]
     if request.path.startswith(tuple(protected_paths)):
         if "admin_id" not in session:
@@ -129,15 +135,15 @@ def leaderboard():
 def referral_leaderboard():
     top_referrers = (
         User.query
-        .filter(User.referrals.any())
-        .order_by(db.func.count(User.referrals).desc())
+        .filter(User.referred_users.any())
+        .order_by(db.func.count(User.referred_users).desc())
         .limit(10)
         .all()
     )
 
     referral_data = []
     for user in top_referrers:
-        invited = [u.username for u in user.referrals]
+        invited = [u.username for u in user.referred_users]
         referral_data.append({
             "username": user.username,
             "count": len(invited),
@@ -146,6 +152,13 @@ def referral_leaderboard():
         })
 
     return render_template("referral_leaderboard.html", referral_data=referral_data)
+
+# -------------------- AUDIT TRAIL --------------------
+
+@admin_bp.route("/admin/audit")
+def audit_trail():
+    approved_tx = Transaction.query.filter_by(type="withdraw", status="approved").order_by(Transaction.completed_at.desc()).limit(50).all()
+    return render_template("audit_trail.html", approved_tx=approved_tx)
 
 # -------------------- ONE-TIME ADMIN SETUP --------------------
 
