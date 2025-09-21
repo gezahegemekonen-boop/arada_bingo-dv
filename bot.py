@@ -22,7 +22,7 @@ from routes.leaderboard import leaderboard_bp
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo.et")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv-oxct.onrender.com")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "364344971").split(",")]
 
 flask_app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -41,7 +41,7 @@ flask_app.register_blueprint(leaderboard_bp)
 
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-@app.route("/cartela", methods=["GET", "POST"])
+@flask_app.route("/cartela", methods=["GET", "POST"])
 def cartela():
     telegram_id = request.args.get("id")
     user = User.query.filter_by(telegram_id=telegram_id).first()
@@ -57,11 +57,11 @@ def cartela():
         db.session.commit()
         return jsonify({"status": "updated"})
 
-@app.route("/cartela-editor")
+@flask_app.route("/cartela-editor")
 def cartela_editor():
     return render_template("cartela.html", game_id="12345", entry_price=10, player_count=5, pool=50, sound_enabled=True, play_mode="jackpot")
 
-@app.route("/admin/dashboard")
+@flask_app.route("/admin/dashboard")
 def admin_dashboard():
     pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
     pending_withdrawals = Transaction.query.filter_by(type="withdraw", status="pending").all()
@@ -69,7 +69,7 @@ def admin_dashboard():
     players = User.query.order_by(User.created_at.desc()).limit(10).all()
     return render_template("admin_dashboard.html", pending_deposits=pending_deposits, pending_withdrawals=pending_withdrawals, games=games, players=players)
 
-@app.route("/admin/approve_deposit", methods=["POST"])
+@flask_app.route("/admin/approve_deposit", methods=["POST"])
 def approve_deposit():
     tx_id = request.form.get("tx_id")
     amount = int(request.form.get("amount"))
@@ -83,7 +83,7 @@ def approve_deposit():
         db.session.commit()
     return jsonify({"status": "approved"})
 
-@app.route("/admin/approve_withdrawal", methods=["POST"])
+@flask_app.route("/admin/approve_withdrawal", methods=["POST"])
 def approve_withdrawal():
     tx_id = request.form.get("tx_id")
     tx = Transaction.query.get(tx_id)
@@ -267,16 +267,6 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"{tx.type.title()} – {tx.amount} birr – {tx.status}")
 
         await update.message.reply_text("\n".join(lines))
-
-async def jackpot_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    with flask_app.app_context():
-        lobby = Lobby.query.filter_by(status="waiting").first()
-        if not lobby or not lobby.players:
-            await update.message.reply_text("📭 No players in the jackpot lobby.")
-            return
-
-        names = [f"@{p.username}" for p in lobby.players if p.username]
-        await update.message.reply_text(f"👥 Jackpot Lobby:\n{', '.join(names)}")
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
@@ -340,31 +330,13 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
-    telegram_app.add_handler(CommandHandler("preview", preview))
     telegram_app.add_handler(CommandHandler("edit", edit_cartela))
-    telegram_app.add_handler(CommandHandler("joinlobby", join_lobby))
-    telegram_app.add_handler(CommandHandler("startjackpot", start_jackpot))
     telegram_app.add_handler(CommandHandler("endjackpot", end_jackpot))
-    telegram_app.add_handler(CommandHandler("jackpot_preview", jackpot_preview))
-    telegram_app.add_handler(CommandHandler("jackpot_leaderboard", jackpot_leaderboard))
     telegram_app.add_handler(CommandHandler("referral_contest", referral_contest))
     telegram_app.add_handler(CommandHandler("replay", replay))
     telegram_app.add_handler(CommandHandler("demo", demo))
     telegram_app.add_handler(CommandHandler("history", history))
-    telegram_app.add_handler(CommandHandler("remindme", remindme))
-    telegram_app.add_handler(CommandHandler("broadcast", broadcast))
-    telegram_app.add_handler(CommandHandler("auto", toggle_auto_mode))
-    telegram_app.add_handler(CommandHandler("sound", toggle_sound))
-    telegram_app.add_handler(CommandHandler("stats", stats))
-    telegram_app.add_handler(CommandHandler("invite", invite))
-    telegram_app.add_handler(CommandHandler("lang", toggle_language))
-    telegram_app.add_handler(CommandHandler("leaderboard", leaderboard))
 
-    telegram_app.add_handler(CallbackQueryHandler(deposit_menu, pattern="deposit_menu"))
-    telegram_app.add_handler(CallbackQueryHandler(deposit_method, pattern="^deposit_(cbe_birr|telebirr|cbe_bank)$"))
-    telegram_app.add_handler(CallbackQueryHandler(withdraw, pattern="withdraw"))
-    telegram_app.add_handler(CallbackQueryHandler(stats, pattern="stats"))
-    telegram_app.add_handler(CallbackQueryHandler(invite, pattern="invite"))
     telegram_app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
 
     telegram_app.add_handler(MessageHandler(filters.TEXT, handle_user_input))
