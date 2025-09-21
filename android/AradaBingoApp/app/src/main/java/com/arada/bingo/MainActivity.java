@@ -16,4 +16,3 @@ public class MainActivity extends AppCompatActivity {
         setContentView(webView);
     }
 }
-
