@@ -18,9 +18,6 @@ from utils.is_valid_tx_id import is_valid_tx_id
 from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.build_main_keyboard import build_main_keyboard
-from routes.admin import admin_bp
-from routes.payment import payment_bp
-from routes.leaderboard import leaderboard_bp
 
 logging.basicConfig(level=logging.INFO)
 
@@ -37,10 +34,6 @@ except RuntimeError:
     flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///arada.db"
     flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(flask_app)
-
-flask_app.register_blueprint(admin_bp)
-flask_app.register_blueprint(payment_bp)
-flask_app.register_blueprint(leaderboard_bp)
 
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -59,10 +52,6 @@ def cartela():
         user.cartela = new_cartela
         db.session.commit()
         return jsonify({"status": "updated"})
-
-@flask_app.route("/cartela-editor")
-def cartela_editor():
-    return render_template("cartela.html", game_id="12345", entry_price=10, player_count=5, pool=50, sound_enabled=True, play_mode="jackpot")
 
 @flask_app.route("/admin/dashboard")
 def admin_dashboard():
@@ -297,18 +286,6 @@ async def language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🌐 Choose your language:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔄 Currency conversion is not yet supported. Coming soon!")
-
-async def transaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await history(update, context)
-
-async def game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await play_game(update, context)
-
-async def instruction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📘 How to Play:\n1. Deposit funds\n2. Tap /play\n3. Choose your cartela\n4. Wait for jackpot\n5. Win and withdraw!")
-
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
     with flask_app.app_context():
@@ -317,7 +294,6 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         link = referral_link(user.telegram_id)
         await update.message.reply_text(lang["invite"].format(link=link))
 
-    # 🎧 Optional Amharic audio invite
     if user.language == "am":
         try:
             await context.bot.send_voice(
@@ -380,7 +356,6 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.session.commit()
             await update.message.reply_text(f"✅ Withdrawal request for {amount} birr submitted.")
 
-            # 🎧 Optional Amharic audio for withdrawal
             if user.language == "am":
                 try:
                     await context.bot.send_voice(
@@ -397,32 +372,18 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
+
 async def main():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("play", play_game))
     telegram_app.add_handler(CommandHandler("edit", edit_cartela))
     telegram_app.add_handler(CommandHandler("endjackpot", end_jackpot))
     telegram_app.add_handler(CommandHandler("referral_contest", referral_contest))
-    telegram_app.add_handler(CommandHandler("replay", replay))
-    telegram_app.add_handler(CommandHandler("demo", demo))
-    telegram_app.add_handler(CommandHandler("history", history))
-
-    # ✅ Wave 1–5 commands
     telegram_app.add_handler(CommandHandler("deposit", deposit))
     telegram_app.add_handler(CommandHandler("withdraw", withdraw))
     telegram_app.add_handler(CommandHandler("balance", balance))
     telegram_app.add_handler(CommandHandler("language", language))
-    telegram_app.add_handler(CommandHandler("convert", convert))
-    telegram_app.add_handler(CommandHandler("transaction", transaction))
-    telegram_app.add_handler(CommandHandler("game", game))
-    telegram_app.add_handler(CommandHandler("instruction", instruction))
     telegram_app.add_handler(CommandHandler("invite", invite))
-
-    # 🧠 Wave 6–7 readiness (future handlers can be added here)
-    # e.g. telegram_app.add_handler(CommandHandler("sms_mode", sms_mode))
-    # e.g. telegram_app.add_handler(CommandHandler("celebrity_drop", celebrity_cartela))
-    # e.g. telegram_app.add_handler(CommandHandler("schedule_jackpot", schedule_jackpot))
-    # e.g. telegram_app.add_handler(CommandHandler("championship", national_championship))
 
     telegram_app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
     telegram_app.add_handler(MessageHandler(filters.TEXT, handle_user_input))
