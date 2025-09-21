@@ -102,6 +102,7 @@ LANGUAGE_MAP = {
         "language_set": "✅ ቋንቋ ወደ አማርኛ ተቀይሯል።",
     }
 }
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
