@@ -18,6 +18,8 @@ from utils.is_valid_tx_id import is_valid_tx_id
 from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.build_main_keyboard import build_main_keyboard
+from game_logic import BingoGame  # ✅ Added
+game = BingoGame(game_id=1)       # ✅ Added
 
 logging.basicConfig(level=logging.INFO)
 
@@ -157,7 +159,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(lang["welcome"], reply_markup=keyboard)
 
-    # 🎧 Optional Amharic audio welcome
     if user_language == "am":
         try:
             await context.bot.send_voice(
@@ -218,7 +219,6 @@ async def end_jackpot(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg = "🎉 You won the jackpot!" if player.id == winner.id else "😢 You lost this round."
                 await context.bot.send_message(chat_id=int(player.telegram_id), text=msg)
 
-                # 🎧 Optional Amharic audio for winner
                 if player.id == winner.id:
                     try:
                         await context.bot.send_voice(
@@ -249,6 +249,7 @@ async def referral_contest(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"{medal} @{name} – {count} active referrals, {bonus} birr earned")
 
         await update.message.reply_text("\n".join(lines))
+
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"))
     keyboard = [
@@ -295,14 +296,14 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         link = referral_link(user.telegram_id)
         await update.message.reply_text(lang["invite"].format(link=link))
 
-    if user.language == "am":
-        try:
-            await context.bot.send_voice(
-                chat_id=update.effective_chat.id,
-                voice=InputFile("audio/invite_am.ogg")
-            )
-        except:
-            pass
+        if user.language == "am":
+            try:
+                await context.bot.send_voice(
+                    chat_id=update.effective_chat.id,
+                    voice=InputFile("audio/invite_am.ogg")
+                )
+            except:
+                pass
 
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
@@ -369,6 +370,13 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid number.")
 
+async def call_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    result = game.call_number(chat_id=update.effective_chat.id, context=context)
+    if result:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎱 {result['formatted']}")
+    else:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Game finished!")
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
@@ -385,6 +393,7 @@ async def main():
     telegram_app.add_handler(CommandHandler("balance", balance))
     telegram_app.add_handler(CommandHandler("language", language))
     telegram_app.add_handler(CommandHandler("invite", invite))
+    telegram_app.add_handler(CommandHandler("call", call_number))  # ✅ Added
 
     telegram_app.add_handler(CallbackQueryHandler(toggle_language, pattern="toggle_lang"))
     telegram_app.add_handler(MessageHandler(filters.TEXT, handle_user_input))
