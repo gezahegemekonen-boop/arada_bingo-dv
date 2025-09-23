@@ -468,4 +468,6 @@ if __name__ == "__main__":
         daemon=True
     ).start()
 
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    loop.run_forever()
