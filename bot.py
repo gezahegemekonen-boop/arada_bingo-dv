@@ -18,8 +18,8 @@ from utils.is_valid_tx_id import is_valid_tx_id
 from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from utils.build_main_keyboard import build_main_keyboard
-from game_logic import BingoGame  # ✅ Added
-game = BingoGame(game_id=1)       # ✅ Added
+from game_logic import BingoGame
+game = BingoGame(game_id=1)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -176,6 +176,9 @@ async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🧩 Open Game WebApp", web_app=WebAppInfo(url=f"{WEBAPP_URL}?id={telegram_id}"))]
         ])
     )
+
+    # ✅ Start auto-calling with voice playback and winner detection
+    game.start_game(chat_id=update.effective_chat.id, context=context)
 
 async def edit_cartela(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
