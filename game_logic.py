@@ -1,4 +1,3 @@
-# game_logic.py
 import random
 import threading
 import logging
@@ -33,12 +32,10 @@ class BingoGame:
         self.last_call_time = None
         self.auto_call_timer = None
 
-        self.player_modes: Dict[int, str] = {}       # "auto" or "manual"
-        self.sound_enabled: Dict[int, bool] = {}     # True or False
+        self.player_modes: Dict[int, str] = {}
+        self.sound_enabled: Dict[int, bool] = {}
         self.leaderboard: Dict[int, Dict[str, int]] = {}
         self.admin_earnings = 0
-
-    # -------------------- BOARD GENERATION --------------------
 
     def generate_board(self, cartela_number: int) -> List[int]:
         random.seed(cartela_number)
@@ -54,8 +51,6 @@ class BingoGame:
             board.extend([b[row], i[row], n[row], g[row], o[row]])
         return board
 
-    # -------------------- PLAYER MANAGEMENT --------------------
-
     def add_player(self, user_id: int, cartela_number: Optional[int] = None, mode: str = "auto") -> List[int]:
         if user_id not in self.players:
             self.players[user_id] = []
@@ -70,7 +65,7 @@ class BingoGame:
         board = self.generate_board(cartela_number)
         self.players[user_id].append({
             'board': board,
-            'marked': [board[12]],  # Free space
+            'marked': [board[12]],
             'cartela_number': cartela_number
         })
 
@@ -92,26 +87,41 @@ class BingoGame:
     def toggle_mode(self, user_id: int, mode: str):
         self.player_modes[user_id] = mode
 
-    # -------------------- GAME FLOW --------------------
-
-    def start_game(self) -> bool:
+    def start_game(self, chat_id: Optional[int] = None, context: Optional[Any] = None) -> bool:
         if self.status != "waiting":
             return False
         self.status = "active"
-        self.call_number()
-        self.schedule_next_call()
+        self.call_number(chat_id=chat_id, context=context)
+        self.schedule_next_call(chat_id, context)
         return True
 
-    def schedule_next_call(self):
+    def schedule_next_call(self, chat_id: Optional[int], context: Optional[Any]):
         if self.status == "active" and "auto" in self.player_modes.values():
-            self.auto_call_timer = threading.Timer(self.call_interval, self.auto_call)
+            self.auto_call_timer = threading.Timer(
+                self.call_interval,
+                lambda: self.auto_call(chat_id, context)
+            )
             self.auto_call_timer.start()
 
-    def auto_call(self):
+    def auto_call(self, chat_id: Optional[int], context: Optional[Any]):
         if self.status != "active":
             return
-        self.call_number()
-        self.schedule_next_call()
+
+        result = self.call_number(chat_id=chat_id, context=context)
+        if not result:
+            return
+
+        number = int(result["formatted"].split("-")[1])
+        for user_id in self.players:
+            self.mark_number(user_id, number)
+            won, message = self.check_winner(user_id)
+            if won:
+                self.end_game(user_id)
+                if context:
+                    context.bot.send_message(chat_id=user_id, text=f"🎉 {message}")
+                return
+
+        self.schedule_next_call(chat_id, context)
 
     def call_number(self, chat_id: Optional[int] = None, context: Optional[Any] = None) -> Optional[Dict[str, Optional[str]]]:
         available = [n for n in range(1, 76) if n not in self.called_numbers]
@@ -139,8 +149,6 @@ class BingoGame:
         self.last_call_time = datetime.utcnow()
         return True
 
-    # -------------------- MARKING & WINNING --------------------
-
     def mark_number(self, user_id: int, number: int) -> bool:
         if user_id not in self.players:
             return False
@@ -161,23 +169,19 @@ class BingoGame:
             marked = set(board['marked'])
             b = board['board']
 
-            # Rows
             for i in range(0, 25, 5):
                 if all(b[i + j] in marked for j in range(5)):
                     return True, "Winner - Row complete!"
 
-            # Columns
             for i in range(5):
                 if all(b[i + j*5] in marked for j in range(5)):
                     return True, "Winner - Column complete!"
 
-            # Diagonals
             if all(b[i] in marked for i in [0, 6, 12, 18, 24]):
                 return True, "Winner - Diagonal complete!"
             if all(b[i] in marked for i in [4, 8, 12, 16, 20]):
                 return True, "Winner - Diagonal complete!"
 
-            # Corners
             if all(b[i] in marked for i in [0, 4, 20, 24]):
                 return True, "Winner - Corner complete!"
 
@@ -199,8 +203,6 @@ class BingoGame:
         self.leaderboard[winner_id]["wins"] += 1
         self.leaderboard[winner_id]["earnings"] += payout
 
-    # -------------------- UTILITIES --------------------
-
     @staticmethod
     def format_number(number: int) -> str:
         if 1 <= number <= 15: return f"B-{number}"
@@ -220,14 +222,8 @@ class BingoGame:
             reverse=True
         )
         return [(uid, data["wins"], data["earnings"]) for uid, data in sorted_lb[:top_n]]
-
+   
     def get_player_summary(self, user_id: int) -> List[Dict[str, Any]]:
-        return [
-            {
-                "cartela_number": b["cartela_number"],
-                "marked": b["marked"],
-
-                    def get_player_summary(self, user_id: int) -> List[Dict[str, Any]]:
         return [
             {
                 "cartela_number": b["cartela_number"],
