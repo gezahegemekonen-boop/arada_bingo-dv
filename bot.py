@@ -149,10 +149,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     username = update.effective_user.username
 
-    with flask_app.app_context():
+       with flask_app.app_context():
         user = User.query.filter_by(telegram_id=str(telegram_id)).first()
 
-                if not user:
+        if not user:
             user = User(
                 telegram_id=str(telegram_id),
                 username=username,
@@ -184,6 +184,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         )
         else:
             db.session.commit()
+
 
         user_language = user.language
 
