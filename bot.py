@@ -182,6 +182,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             chat_id=int(referrer.telegram_id),
                             text="🎉 You reached 10 active referrals! You've earned a 50 birr bonus!"
                         )
+            else:
+                db.session.add(user)
+                db.session.commit()
+
         else:
             db.session.commit()
 
@@ -201,7 +205,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except:
             pass
-
 
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"))
