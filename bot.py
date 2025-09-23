@@ -149,7 +149,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     username = update.effective_user.username
 
-       with flask_app.app_context():
+    with flask_app.app_context():
         user = User.query.filter_by(telegram_id=str(telegram_id)).first()
 
         if not user:
@@ -185,7 +185,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             db.session.commit()
 
-
         user_language = user.language
 
     context.chat_data["language"] = user_language
@@ -202,6 +201,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except:
             pass
+
 
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = LANGUAGE_MAP.get(context.chat_data.get("language", "en"))
