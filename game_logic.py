@@ -4,6 +4,16 @@ import threading
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple, Any
+from telegram import InputFile
+import os
+
+def play_bingo_audio(chat_id: int, number: int, context: Any):
+    filename = BingoGame.format_number(number).lower().replace("-", "") + ".ogg"
+    path = os.path.join("audio", "bingo", filename)
+    try:
+        context.bot.send_voice(chat_id=chat_id, voice=InputFile(path))
+    except Exception as e:
+        context.bot.send_message(chat_id=chat_id, text=f"🎙️ Audio for {number} not found.")
 
 class BingoGame:
     def __init__(self, game_id: int, entry_price: int = 10):
@@ -103,7 +113,7 @@ class BingoGame:
         self.call_number()
         self.schedule_next_call()
 
-    def call_number(self) -> Optional[Dict[str, Optional[str]]]:
+    def call_number(self, chat_id: Optional[int] = None, context: Optional[Any] = None) -> Optional[Dict[str, Optional[str]]]:
         available = [n for n in range(1, 76) if n not in self.called_numbers]
         if not available:
             self.status = "finished"
@@ -113,6 +123,9 @@ class BingoGame:
         number = random.choice(available)
         self.called_numbers.append(number)
         self.last_call_time = datetime.utcnow()
+
+        if chat_id and context and self.sound_enabled.get(chat_id, True):
+            play_bingo_audio(chat_id, number, context)
 
         return {
             "formatted": self.format_number(number),
@@ -198,7 +211,7 @@ class BingoGame:
 
     @staticmethod
     def audio_filename(number: int) -> str:
-        return f"{BingoGame.format_number(number)}.mp3"
+        return f"{BingoGame.format_number(number).lower().replace('-', '')}.ogg"
 
     def get_leaderboard(self, top_n: int = 10) -> List[Tuple[int, int, int]]:
         sorted_lb = sorted(
@@ -209,6 +222,12 @@ class BingoGame:
         return [(uid, data["wins"], data["earnings"]) for uid, data in sorted_lb[:top_n]]
 
     def get_player_summary(self, user_id: int) -> List[Dict[str, Any]]:
+        return [
+            {
+                "cartela_number": b["cartela_number"],
+                "marked": b["marked"],
+
+                    def get_player_summary(self, user_id: int) -> List[Dict[str, Any]]:
         return [
             {
                 "cartela_number": b["cartela_number"],
@@ -230,7 +249,7 @@ class BingoGame:
     def is_ready(self) -> bool:
         return self.status == "waiting" and self.total_players() >= self.min_players
 
-        def reset_game(self):
+    def reset_game(self):
         self.status = "waiting"
         self.called_numbers.clear()
         self.winner_id = None
