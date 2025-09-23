@@ -458,12 +458,9 @@ async def main():
 
     logging.info("✅ Arada Bingo Ethiopia bot is starting...")
 
-    await telegram_app.initialize()
-    await telegram_app.bot.delete_webhook(drop_pending_updates=True)
     flask_app.app_context().push()
-    await telegram_app.start()
-    await telegram_app.updater.start_polling()
-    await telegram_app.updater.wait_until_closed()
+    await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+    await telegram_app.run_polling()
 
 if __name__ == "__main__":
     threading.Thread(
