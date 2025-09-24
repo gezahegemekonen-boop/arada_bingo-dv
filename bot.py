@@ -535,6 +535,8 @@ async def main():
     logging.info("✅ Arada Bingo Ethiopia bot is starting...")
 
     flask_app.app_context().push()
+   async def main():
+    # your handlers and setup...
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
     await telegram_app.run_webhook(
         listen="0.0.0.0",
@@ -543,4 +545,4 @@ async def main():
     )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
