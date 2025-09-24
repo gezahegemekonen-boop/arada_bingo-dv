@@ -23,7 +23,7 @@ game = BingoGame(game_id=1)
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv-oxct.onrender.com")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://arada-bingo-dv-oxct.onrender.com")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "364344971").split(",")]
 
 flask_app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -536,13 +536,11 @@ async def main():
 
     flask_app.app_context().push()
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
-   await telegram_app.run_webhook(
-    listen="0.0.0.0",
-    port=int(os.environ.get("PORT", 5000)),
-    webhook_url=os.environ["WEBHOOK_URL"]
-)
+    await telegram_app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        webhook_url=os.environ["WEBHOOK_URL"]
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
