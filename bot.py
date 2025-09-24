@@ -536,13 +536,13 @@ async def main():
 
     flask_app.app_context().push()
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
-    await telegram_app.run_polling()
+   await telegram_app.run_webhook(
+    listen="0.0.0.0",
+    port=int(os.environ.get("PORT", 5000)),
+    webhook_url=os.environ["WEBHOOK_URL"]
+)
 
 if __name__ == "__main__":
-    threading.Thread(
-        target=lambda: flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000))),
-        daemon=True
-    ).start()
-
     asyncio.run(main())
+
 
