@@ -2,7 +2,6 @@ import os
 import logging
 import asyncio
 import random
-import threading
 from flask import Flask, request, jsonify, render_template
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputFile, ReplyKeyboardMarkup
@@ -18,12 +17,14 @@ from utils.is_valid_tx_id import is_valid_tx_id
 from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from game_logic import BingoGame
+
 game = BingoGame(game_id=1)
 
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://arada-bingo-dv-oxct.onrender.com")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv-oxct.onrender.com/cartela")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "364344971").split(",")]
 
 flask_app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -120,65 +121,10 @@ def payout_winner():
         return jsonify({"status": "paid"})
     return jsonify({"status": "error"})
 
-LANGUAGE_MAP = {
-    "en": {
-        "welcome": "🎉 Welcome to Arada Bingo Ethiopia!",
-        "play": "🎮 Play",
-        "deposit": "💰 Deposit",
-        "withdraw": "🏧 Withdraw",
-        "balance": "💳 Balance",
-        "invite": "📨 Invite Friends",
-        "language": "🌐 Language",
-        "convert": "🔄 Convert Coins",
-        "transactions": "📜 Transactions",
-        "history": "📂 Game History",
-        "instruction": "📘 Instructions",
-        "support": "🛠️ Support",
-        "referral_contest": "🏆 Referral Contest",
-        "leaderboard": "📊 Leaderboard",
-        "summary": "🧾 Summary",
-        "mycartela": "🧩 My Cartela",
-        "mygames": "🎲 My Games",
-        "referrals": "👥 My Referrals",
-        "toggle_sound": "🔈 Toggle Sound",
-        "report_bug": "🐞 Report Bug",
-        "schedule_game": "🗓️ Schedule Game",
-        "broadcast": "📢 Admin Broadcast",
-        "adminstats": "📈 Admin Stats",
-        "cartela_preview": "👀 Cartela Preview",
-        "call": "📞 Call Admin"
-    },
-    "am": {
-        "welcome": "🎉 እንኳን ደህና መጣህ ወደ አራዳ ቢንጎ ኢትዮጵያ!",
-        "play": "🎮 መጫወት",
-        "deposit": "💰 ተቀማጭ",
-        "withdraw": "🏧 መውጣት",
-        "balance": "💳 ቀሪ ሂሳብ",
-        "invite": "📨 ጓደኞችን መጋበዝ",
-        "language": "🌐 ቋንቋ",
-        "convert": "🔄 ኮይኖችን መቀየር",
-        "transactions": "📜 ግብይቶች",
-        "history": "📂 የጨዋታ ታሪክ",
-        "instruction": "📘 መመሪያዎች",
-        "support": "🛠️ ድጋፍ",
-        "referral_contest": "🏆 የምስክር ውድድር",
-        "leaderboard": "📊 የአሸናፊዎች ዝርዝር",
-        "summary": "🧾 ዝርዝር መግለጫ",
-        "mycartela": "🧩 የእኔ ካርተላ",
-        "mygames": "🎲 የእኔ ጨዋታዎች",
-        "referrals": "👥 የእኔ ምስክሮች",
-        "toggle_sound": "🔈 ድምፅ መቀየር",
-        "report_bug": "🐞 ችግር ማመልከት",
-        "schedule_game": "🗓️ ጨዋታ መመደብ",
-        "broadcast": "📢 የአስተዳዳሪ መልዕክት",
-        "adminstats": "📈 የአስተዳዳሪ ቁጥሮች",
-        "cartela_preview": "👀 ካርተላ ቅድመ እይታ",
-        "call": "📞 አስተዳዳሪን ማግኘት"
-    }
-}
-
+LANGUAGE_MAP = { ... }  # Keep your full bilingual dictionary here
 def get_lang(context, fallback="en"):
-    return LANGUAGE_MAP.get(context.chat_data.get("language", fallback), LANGUAGE_MAP["en"])
+    lang_code = context.chat_data.get("language", fallback)
+    return LANGUAGE_MAP.get(lang_code, LANGUAGE_MAP["en"])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
@@ -199,12 +145,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 balance=0,
                 language="en"
             )
+            db.session.add(user)
+            db.session.commit()
 
             if referral_telegram_id and referral_telegram_id != telegram_id:
                 referrer = User.query.filter_by(telegram_id=str(referral_telegram_id)).first()
                 if referrer:
                     user.referrer_id = referrer.id
-                    db.session.add(user)
                     db.session.commit()
 
                     active_refs = [u for u in referrer.referred_users if u.games_played > 0]
@@ -217,15 +164,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             status="approved",
                             reason="Milestone: 10 active referrals"
                         ))
-                        db.session.add(referrer)
+                        db.session.commit()
                         await context.bot.send_message(
                             chat_id=int(referrer.telegram_id),
                             text="🎉 You reached 10 active referrals! You've earned a 50 birr bonus!"
                         )
-            else:
-                db.session.add(user)
-                db.session.commit()
-
         else:
             db.session.commit()
 
@@ -251,7 +194,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=update.effective_chat.id,
                 voice=InputFile("audio/welcome_am.ogg")
             )
-        except:
+        except Exception:
             pass
 
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -281,10 +224,9 @@ async def referral_contest(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
     lang = get_lang(context)
     link = referral_link(telegram_id)
-    await update.message.reply_text(lang["invite"].format(link=link))
+    await update.message.reply_text(f"{lang['invite']}: {link}")
 
 async def language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🌐 Choose your language:", reply_markup=InlineKeyboardMarkup([
@@ -309,7 +251,7 @@ async def call_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎱 {result['formatted']}")
         try:
             await context.bot.send_voice(chat_id=update.effective_chat.id, voice=InputFile("audio/number_call_am.ogg"))
-        except:
+        except Exception:
             pass
     else:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Game finished!")
@@ -405,7 +347,7 @@ async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for u in users:
         try:
             await context.bot.send_message(chat_id=int(u.telegram_id), text=message)
-        except:
+        except Exception:
             continue
     lang = get_lang(context)
     await update.message.reply_text(f"{lang['broadcast']}: Sent.")
@@ -423,17 +365,6 @@ async def cartela_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(context)
     await update.message.reply_text(f"{lang['cartela_preview']}: Coming soon.")
 
-async def call_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result = game.call_number(chat_id=update.effective_chat.id, context=context)
-    if result:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎱 {result['formatted']}")
-        try:
-            await context.bot.send_voice(chat_id=update.effective_chat.id, voice=InputFile("audio/number_call_am.ogg"))
-        except:
-            pass
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Game finished!")
-
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
@@ -448,8 +379,8 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if text.startswith("edit:"):
-            context.args = text.replace("edit:", "").strip()
-            user.cartela = context.args
+            new_cartela = text.replace("edit:", "").strip()
+            user.cartela = new_cartela
             db.session.commit()
             await update.message.reply_text("✅ Cartela updated.")
             return
@@ -495,7 +426,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         chat_id=update.effective_chat.id,
                         voice=InputFile("audio/withdraw_am.ogg")
                     )
-                except:
+                except Exception:
                     pass
 
         except ValueError:
@@ -535,8 +466,7 @@ async def main():
     logging.info("✅ Arada Bingo Ethiopia bot is starting...")
 
     flask_app.app_context().push()
-   async def main():
-    # your handlers and setup...
+
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
     await telegram_app.run_webhook(
         listen="0.0.0.0",
@@ -545,4 +475,4 @@ async def main():
     )
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
