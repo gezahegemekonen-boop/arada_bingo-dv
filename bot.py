@@ -4,11 +4,12 @@ import asyncio
 import random
 from flask import Flask, request, jsonify, render_template
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, InputFile, ReplyKeyboardMarkup
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo,
+    InputFile, ReplyKeyboardMarkup
 )
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
 )
 from sqlalchemy import func
 from database import db, init_db
@@ -18,15 +19,17 @@ from utils.referral_link import referral_link
 from utils.toggle_language import toggle_language
 from game_logic import BingoGame
 
+# 🎯 Core game instance
 game = BingoGame(game_id=1)
 
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://arada-bingo-dv-oxct.onrender.com")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://arada-bingo-dv-oxct.onrender.com/cartela")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://bingo-pgil.onrender.com")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://bingo-pgil.onrender.com/cartela")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "364344971").split(",")]
 
+# --- Flask setup ---
 flask_app = Flask(__name__, template_folder="templates", static_folder="static")
 flask_app.secret_key = os.getenv("FLASK_SECRET", "bot_secret")
 
@@ -37,8 +40,12 @@ except RuntimeError:
     flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(flask_app)
 
+# --- Telegram setup ---
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+# -----------------------------
+# Flask routes
+# -----------------------------
 @flask_app.route("/cartela", methods=["GET", "POST"])
 def cartela():
     telegram_id = request.args.get("id")
@@ -55,6 +62,7 @@ def cartela():
         db.session.commit()
         return jsonify({"status": "updated"})
 
+
 @flask_app.route("/admin/dashboard")
 def admin_dashboard():
     pending_deposits = Transaction.query.filter_by(type="deposit", status="pending").all()
@@ -64,7 +72,8 @@ def admin_dashboard():
     leaderboard = game.get_leaderboard()
     summary = game.summary()
     users = {u.id: u for u in User.query.all()}
-    return render_template("admin_dashboard.html",
+    return render_template(
+        "admin_dashboard.html",
         pending_deposits=pending_deposits,
         pending_withdrawals=pending_withdrawals,
         games=games,
@@ -73,6 +82,7 @@ def admin_dashboard():
         summary=summary,
         users=users
     )
+
 
 @flask_app.route("/admin/approve_deposit", methods=["POST"])
 def approve_deposit():
@@ -90,6 +100,7 @@ def approve_deposit():
         db.session.commit()
     return jsonify({"status": "approved"})
 
+
 @flask_app.route("/admin/approve_withdrawal", methods=["POST"])
 def approve_withdrawal():
     tx_id = request.form.get("tx_id")
@@ -100,6 +111,7 @@ def approve_withdrawal():
         tx.approval_note = request.form.get("note", "")
         db.session.commit()
     return jsonify({"status": "approved"})
+
 
 @flask_app.route("/admin/payout_winner", methods=["POST"])
 def payout_winner():
@@ -121,10 +133,17 @@ def payout_winner():
         return jsonify({"status": "paid"})
     return jsonify({"status": "error"})
 
-LANGUAGE_MAP = { ... }  # Keep your full bilingual dictionary here
+
+# --- Language utils ---
+LANGUAGE_MAP = { ... }  # keep full bilingual dictionary
+
 def get_lang(context, fallback="en"):
     lang_code = context.chat_data.get("language", fallback)
     return LANGUAGE_MAP.get(lang_code, LANGUAGE_MAP["en"])
+
+# -----------------------------
+# Telegram command handlers
+# -----------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
@@ -197,14 +216,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+
+# -----------------------------
+# Financial & game commands
+# -----------------------------
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(context)
     context.chat_data["deposit_method"] = "cbe_birr"
     await update.message.reply_text(lang["deposit"])
 
+
 async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(context)
     await update.message.reply_text(lang["withdraw"])
+
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
@@ -216,11 +241,13 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ You must start the bot first using /start.")
 
+
 async def referral_contest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(context)
     telegram_id = str(update.effective_user.id)
     link = referral_link(telegram_id)
     await update.message.reply_text(f"{lang['referral_contest']}:\n{link}")
+
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
@@ -228,11 +255,16 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     link = referral_link(telegram_id)
     await update.message.reply_text(f"{lang['invite']}: {link}")
 
+
 async def language(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🌐 Choose your language:", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇬🇧 English", callback_data="toggle_lang:en")],
-        [InlineKeyboardButton("🇪🇹 አማርኛ", callback_data="toggle_lang:am")]
-    ]))
+    await update.message.reply_text(
+        "🌐 Choose your language:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🇬🇧 English", callback_data="toggle_lang:en")],
+            [InlineKeyboardButton("🇪🇹 አማርኛ", callback_data="toggle_lang:am")]
+        ])
+    )
+
 
 async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
@@ -245,6 +277,7 @@ async def play_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     game.start_game(chat_id=update.effective_chat.id, context=context)
 
+
 async def call_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = game.call_number(chat_id=update.effective_chat.id, context=context)
     if result:
@@ -256,114 +289,9 @@ async def call_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Game finished!")
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lang = get_lang(context)
-    lb = game.get_leaderboard()
-    if not lb:
-        await update.message.reply_text(f"{lang['leaderboard']}: No winners yet.")
-        return
-    lines = [lang["leaderboard"]]
-    medals = ["🥇", "🥈", "🥉"]
-    for i, (uid, wins, earnings) in enumerate(lb):
-        user = User.query.get(uid)
-        medal = medals[i] if i < 3 else "🔹"
-        lines.append(f"{medal} @{user.username} – {wins} wins, {earnings} birr")
-    await update.message.reply_text("\n".join(lines))
-
-async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lang = get_lang(context)
-    s = game.summary()
-    lines = [
-        f"{lang['summary']}:",
-        f"Game #{s['game_id']}",
-        f"Status: {s['status']}",
-        f"Players: {s['players']}",
-        f"Pool: {s['pool']} birr",
-        f"Called Numbers: {s['called']}",
-        f"Winner: @{User.query.get(s['winner']).username}" if s['winner'] else "Winner: —",
-        f"Admin Earnings: {s['admin_earnings']} birr"
-    ]
-    await update.message.reply_text("\n".join(lines))
-
-async def mycartela(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    summary = game.get_player_summary(user.id)
-    if not summary:
-        await update.message.reply_text("🧩 You have no active cartelas.")
-        return
-    lines = ["🧩 Your Cartelas:"]
-    for c in summary:
-        lines.append(f"Cartela #{c['cartela_number']}: marked {len(c['marked'])} numbers")
-        lines.append(f"🔢 {sorted(c['marked'])}")
-    await update.message.reply_text("\n".join(lines))
-
-async def mygames(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    games = GameParticipant.query.filter_by(user_id=user.id).order_by(GameParticipant.id.desc()).limit(5).all()
-    lines = ["📜 Your Recent Games:"]
-    for g in games:
-        lines.append(f"Game #{g.game_id} – Cartela #{g.cartela_number} – Marked: {len(g.marked_numbers)}")
-    await update.message.reply_text("\n".join(lines))
-
-async def referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    active_refs = [u for u in user.referred_users if u.games_played > 0]
-    link = referral_link(telegram_id)
-    lang = get_lang(context)
-    await update.message.reply_text(f"{lang['referrals']}: {len(active_refs)} active\nLink: {link}")
-
-async def toggle_sound(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = str(update.effective_user.id)
-    user = User.query.filter_by(telegram_id=telegram_id).first()
-    user.sound_enabled = not user.sound_enabled
-    db.session.commit()
-    lang = get_lang(context)
-    status = lang["toggle_sound"] + (" ✅ ON" if user.sound_enabled else " ❌ OFF")
-    await update.message.reply_text(status)
-
-async def report_bug(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lang = get_lang(context)
-    await update.message.reply_text(lang["report_bug"])
-
-async def schedule_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("❌ Only admins can schedule games.")
-        return
-    sg = ScheduledGame(entry_price=10.0, status="pending")
-    db.session.add(sg)
-    db.session.commit()
-    lang = get_lang(context)
-    await update.message.reply_text(f"{lang['schedule_game']}: Game #{sg.id} created.")
-
-async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("❌ Only admins can broadcast.")
-        return
-    message = " ".join(context.args)
-    users = User.query.all()
-    for u in users:
-        try:
-            await context.bot.send_message(chat_id=int(u.telegram_id), text=message)
-        except Exception:
-            continue
-    lang = get_lang(context)
-    await update.message.reply_text(f"{lang['broadcast']}: Sent.")
-
-async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    total_users = User.query.count()
-    total_games = Game.query.count()
-    total_balance = db.session.query(func.sum(User.balance)).scalar() or 0
-    lang = get_lang(context)
-    await update.message.reply_text(
-        f"{lang['adminstats']}:\nUsers: {total_users}\nGames: {total_games}\nTotal Balance: {total_balance} birr"
-    )
-
-async def cartela_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lang = get_lang(context)
-    await update.message.reply_text(f"{lang['cartela_preview']}: Coming soon.")
+# -----------------------------
+# Handle user input and errors
+# -----------------------------
 
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
@@ -378,6 +306,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ You must start the bot first using /start.")
             return
 
+        # --- Edit cartela ---
         if text.startswith("edit:"):
             new_cartela = text.replace("edit:", "").strip()
             user.cartela = new_cartela
@@ -385,6 +314,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Cartela updated.")
             return
 
+        # --- Deposit process ---
         if context.chat_data and "deposit_method" in context.chat_data:
             method = context.chat_data["deposit_method"]
             if not is_valid_tx_id(text):
@@ -404,6 +334,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Transaction received. Awaiting admin approval.")
             return
 
+        # --- Withdrawal process ---
         try:
             amount = int(text)
             if amount <= 0 or amount > user.balance:
@@ -432,12 +363,17 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ Please enter a valid number.")
 
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.error("Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
 
-async def main():
+
+# -----------------------------
+# Main async setup (Render-safe)
+# -----------------------------
+async def start_bot():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("deposit", deposit))
     telegram_app.add_handler(CommandHandler("withdraw", withdraw))
@@ -464,9 +400,9 @@ async def main():
     telegram_app.add_error_handler(error_handler)
 
     logging.info("✅ Arada Bingo Ethiopia bot is starting...")
-
     flask_app.app_context().push()
 
+    # Render-safe webhook setup
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
     await telegram_app.run_webhook(
         listen="0.0.0.0",
@@ -474,5 +410,16 @@ async def main():
         webhook_url=os.environ["WEBHOOK_URL"]
     )
 
+
+# -----------------------------
+# Render entrypoint (no double event loop)
+# -----------------------------
 if __name__ == "__main__":
-    asyncio.run(main())
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(start_bot())
+    except RuntimeError:
+        # Handles case when Render keeps a loop open
+        asyncio.run(start_bot())
