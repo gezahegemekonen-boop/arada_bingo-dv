@@ -1,6 +1,8 @@
 import os
 import asyncio
 import logging
+import threading
+from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
     InputFile, WebAppInfo
@@ -9,7 +11,6 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
-from flask import Flask
 from models import db, User, Game, GameParticipant, Transaction, ScheduledGame
 from utils import get_lang, referral_link, is_valid_tx_id
 from sqlalchemy import func
@@ -20,6 +21,16 @@ import game
 # Flask App setup
 # ------------------------------------------------------
 flask_app = Flask(__name__)
+
+@flask_app.route("/", methods=["GET"])
+def home():
+    return "✅ Arada Bingo Bot is running on Render", 200
+
+@flask_app.route("/webhook", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    asyncio.get_event_loop().create_task(telegram_app.process_update(update))
+    return "OK", 200
 
 # ------------------------------------------------------
 # Logging setup
@@ -294,7 +305,6 @@ async def start_bot():
     telegram_app.add_handler(CommandHandler("broadcast", admin_broadcast))
     telegram_app.add_handler(CommandHandler("adminstats", admin_stats))
     telegram_app.add_handler(CommandHandler("cartela_preview", cartela_preview))
-
     telegram_app.add_handler(CallbackQueryHandler(language, pattern="toggle_lang"))
     telegram_app.add_handler(MessageHandler(filters.TEXT, handle_user_input))
     telegram_app.add_error_handler(error_handler)
@@ -303,19 +313,14 @@ async def start_bot():
 
     flask_app.app_context().push()
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
-    await telegram_app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        webhook_url=WEBHOOK_URL
-    )
+    await telegram_app.bot.set_webhook(url=WEBHOOK_URL)
 
 # ------------------------------------------------------
 # Main entry
 # ------------------------------------------------------
 if __name__ == "__main__":
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(start_bot())
-    except RuntimeError:
-        asyncio.run(start_bot())
+    def run_flask():
+        flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+    threading.Thread(target=run_flask).start()
+    asyncio.run(start_bot())
