@@ -2,12 +2,14 @@
 import os
 from dotenv import load_dotenv
 
-# 📦 Load environment variables from .env file (for local dev)
+# 📦 Load environment variables from .env file (for local development)
 load_dotenv()
 
 # 🔐 Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ADMIN_IDS = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip().isdigit()]
+ADMIN_IDS = [
+    int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip().isdigit()
+]
 
 # 🎮 Game Settings
 CARTELA_SIZE = int(os.getenv("CARTELA_SIZE", 100))  # Total numbers in Bingo
@@ -29,3 +31,10 @@ SQLALCHEMY_TRACK_MODIFICATIONS = False
 # 🌐 Flask Server Configuration
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
+
+# 🌍 URLs for Web App & Telegram Webhook
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://bingo-pgil.onrender.com/cartela")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://bingo-pgil.onrender.com/webhook")
+
+# 🔑 Flask Secret (used for sessions)
+FLASK_SECRET = os.getenv("FLASK_SECRET", "super-secret-key-change-this")
