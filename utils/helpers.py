@@ -1,49 +1,43 @@
-from .helpers import is_valid_tx_id, referral_link, toggle_language, format_cartela, build_main_keyboard
+import re
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def get_lang(context):
-    """Return language strings based on user's selected language."""
-    default = {
-        "en": {
-            "deposit": "Please send your deposit transaction ID.",
-            "withdraw": "Enter amount to withdraw.",
-            "balance": "Your balance",
-            "referral_contest": "Referral Contest",
-            "invite": "Invite your friends using this link",
-            "leaderboard": "Leaderboard",
-            "summary": "Game Summary",
-            "referrals": "Referrals",
-            "toggle_sound": "Sound",
-            "report_bug": "Report a bug",
-            "schedule_game": "Schedule a new game",
-            "broadcast": "Broadcast message",
-            "adminstats": "Admin Stats",
-            "cartela_preview": "Cartela Preview",
-            "play": "Let’s play Bingo!"
-        },
-        "am": {
-            "deposit": "የተቀበልክዎትን የግብይት መለያ ያስገቡ።",
-            "withdraw": "የሚወጡትን መጠን ያስገቡ።",
-            "balance": "የእርስዎ ቀሪ ገንዘብ",
-            "referral_contest": "የመጋቢ ውድድር",
-            "invite": "ጓደኞችዎን ይጋብዙ።",
-            "leaderboard": "የአሸናፊዎች ዝርዝር",
-            "summary": "የጨዋታ ማጠቃለያ",
-            "referrals": "የተጠቃሚ ማመንጫዎች",
-            "toggle_sound": "ድምጽ",
-            "report_bug": "ችግኝ ያመልክቱ።",
-            "schedule_game": "ጨዋታ ያቅዱ።",
-            "broadcast": "መልዕክት ይላኩ።",
-            "adminstats": "የአስተዳዳሪ ቁጥሮች",
-            "cartela_preview": "የካርቴላ ቅድመ እይታ",
-            "play": "ቢንጎ እንጫወታ!"
-        }
-    }
-
-    lang_code = context.user_data.get("lang", "en")
-    return default.get(lang_code, default["en"])
+def is_valid_tx_id(tx_id: str) -> bool:
+    """Validate a transaction ID."""
+    return bool(re.match(r"^[A-Za-z0-9]{6,}$", tx_id.strip()))
 
 
-def referral_link(telegram_id: str) -> str:
-    """Simplified referral link for the bot."""
-    return f"https://t.me/AradaBingoBot?start={telegram_id}"
+def referral_link(bot_username: str, user_id: int) -> str:
+    """Generate a Telegram referral link."""
+    return f"https://t.me/{bot_username}?start={user_id}"
+
+
+def toggle_language(current: str) -> str:
+    """Toggle between 'en' and 'am' language codes."""
+    return "am" if current == "en" else "en"
+
+
+def format_cartela(board: list, marked: list) -> str:
+    """Format a 5x5 bingo board with marked numbers wrapped in []."""
+    output = ""
+    for i in range(5):
+        row = board[i * 5:(i + 1) * 5]
+        formatted = [f"[{n}]" if n in marked else f" {n} " for n in row]
+        output += " ".join(formatted) + "\n"
+    return output.strip()
+
+
+def build_main_keyboard(lang: dict, webapp_url: str) -> InlineKeyboardMarkup:
+    """Build the main Telegram inline keyboard for the bot."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎮 Play Bingo", web_app={"url": webapp_url})],
+        [
+            InlineKeyboardButton("💰 Deposit", callback_data="deposit_menu"),
+            InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
+        ],
+        [
+            InlineKeyboardButton("📊 My Stats", callback_data="stats"),
+            InlineKeyboardButton("🎁 Invite Friends", callback_data="invite"),
+        ],
+        [InlineKeyboardButton("🌐 Language: English / አማርኛ", callback_data="toggle_lang")],
+    ])
